@@ -1,0 +1,133 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f3; color: #1a1a1a; }
+.app { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+.topo { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 10px; }
+.logo { font-size: 20px; font-weight: 600; color: #1a1a1a; letter-spacing: -0.5px; }
+.logo span { color: #1D9E75; }
+.nav { display: flex; gap: 4px; background: #ebebeb; border-radius: 10px; padding: 4px; }
+.nav-btn { font-size: 13px; padding: 6px 16px; border-radius: 7px; border: none; background: transparent; color: #666; cursor: pointer; transition: all 0.12s; }
+.nav-btn:hover { background: #fff; color: #1a1a1a; }
+.nav-btn.ativo { background: #fff; color: #1a1a1a; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.data-hora { font-size: 13px; color: #888; }
+.filtro-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1.25rem; }
+.filtro-btn { font-size: 12px; padding: 5px 14px; border-radius: 20px; border: 1px solid #ddd; background: #fff; color: #666; cursor: pointer; transition: all 0.12s; }
+.filtro-btn:hover { background: #f0f0f0; }
+.filtro-btn.ativo { background: #1D9E75; color: #fff; border-color: #1D9E75; }
+.resumo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1.5rem; }
+.metrica { background: #fff; border-radius: 10px; padding: 14px 16px; border: 1px solid #eee; }
+.metrica-label { font-size: 12px; color: #888; margin-bottom: 6px; }
+.metrica-valor { font-size: 22px; font-weight: 600; color: #1a1a1a; }
+.metrica-valor.alerta { color: #D85A30; }
+.metrica-sub { font-size: 11px; color: #aaa; margin-top: 3px; }
+.dois-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 1.5rem; }
+.card-box { background: #fff; border-radius: 12px; padding: 1.25rem; border: 1px solid #eee; }
+.secao-titulo { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+.vazio { font-size: 13px; color: #aaa; text-align: center; padding: 1rem; }
+.ranking-item { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #f0f0f0; }
+.ranking-item:last-child { border-bottom: none; }
+.ranking-pos { font-size: 13px; font-weight: 600; color: #aaa; min-width: 16px; }
+.ranking-info { flex: 1; }
+.ranking-placa { font-size: 13px; font-weight: 600; color: #1a1a1a; }
+.ranking-motorista { font-size: 11px; color: #888; }
+.barra-bg { height: 4px; background: #f0f0f0; border-radius: 2px; margin-top: 5px; }
+.barra-fill { height: 4px; border-radius: 2px; background: #D85A30; }
+.ranking-valor { text-align: right; }
+.ranking-reais { font-size: 13px; font-weight: 600; color: #D85A30; }
+.ranking-tempo { font-size: 11px; color: #aaa; }
+.projecao-numero { font-size: 30px; font-weight: 700; color: #D85A30; margin: 8px 0 4px; }
+.projecao-sub { font-size: 12px; color: #888; line-height: 1.5; margin-bottom: 12px; }
+.projecao-linha { display: flex; justify-content: space-between; padding: 6px 0; border-top: 1px solid #f0f0f0; font-size: 12px; }
+.pl-label { color: #888; }
+.pl-valor { font-weight: 600; color: #1a1a1a; }
+.economia-destaque { background: #EAF3DE; border-radius: 8px; padding: 10px 14px; margin-top: 12px; }
+.eco-label { font-size: 11px; color: #3B6D11; margin-bottom: 2px; }
+.eco-valor { font-size: 17px; font-weight: 700; color: #27500A; }
+.legenda { display: flex; gap: 16px; margin-bottom: 10px; }
+.leg-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #888; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.dot.verde { background: #1D9E75; }
+.dot.amarelo { background: #BA7517; }
+.dot.vermelho { background: #D85A30; }
+.frota-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 1.5rem; }
+.card-veiculo { border-radius: 10px; padding: 12px; cursor: pointer; border: 2px solid transparent; transition: all 0.15s; }
+.card-veiculo:hover { opacity: 0.85; }
+.card-veiculo.verde { background: #EAF3DE; border-color: #639922; }
+.card-veiculo.amarelo { background: #FAEEDA; border-color: #BA7517; }
+.card-veiculo.vermelho { background: #FCEBEB; border-color: #A32D2D; }
+.card-veiculo.selecionado { box-shadow: 0 0 0 3px #1a1a1a; }
+.cv-placa { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+.verde .cv-placa { color: #27500A; }
+.amarelo .cv-placa { color: #633806; }
+.vermelho .cv-placa { color: #791F1F; }
+.cv-motorista { font-size: 11px; margin-bottom: 2px; }
+.verde .cv-motorista { color: #3B6D11; }
+.amarelo .cv-motorista { color: #854F0B; }
+.vermelho .cv-motorista { color: #A32D2D; }
+.cv-carreta { font-size: 10px; color: #aaa; margin-bottom: 5px; }
+.cv-status { display: flex; align-items: center; gap: 4px; }
+.cv-status-txt { font-size: 10px; }
+.verde .cv-status-txt { color: #3B6D11; }
+.amarelo .cv-status-txt { color: #854F0B; }
+.vermelho .cv-status-txt { color: #A32D2D; }
+.ignicao { font-size: 10px; margin-top: 5px; display: inline-block; padding: 2px 7px; border-radius: 10px; }
+.ignicao.on { background: #FCEBEB; color: #A32D2D; }
+.ignicao.off { background: #f0f0f0; color: #aaa; }
+.detalhe-painel { background: #fff; border-radius: 12px; padding: 1.25rem; border: 1px solid #eee; margin-bottom: 1.5rem; }
+.det-topo { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
+.det-titulo { font-size: 16px; font-weight: 700; color: #1a1a1a; }
+.det-sub { font-size: 13px; color: #888; margin-top: 2px; }
+.badge { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+.badge.verde { background: #EAF3DE; color: #27500A; }
+.badge.amarelo { background: #FAEEDA; color: #633806; }
+.badge.vermelho { background: #FCEBEB; color: #791F1F; }
+.det-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1rem; }
+.det-item { background: #f8f8f6; border-radius: 8px; padding: 12px; }
+.det-label { font-size: 11px; color: #888; margin-bottom: 4px; }
+.det-valor { font-size: 17px; font-weight: 600; color: #1a1a1a; }
+.det-valor.alerta { color: #D85A30; }
+.alerta-box { border-radius: 8px; padding: 14px 16px; margin-bottom: 1rem; display: flex; gap: 12px; align-items: flex-start; }
+.alerta-box.amarelo { background: #FAEEDA; border: 1px solid #BA7517; }
+.alerta-box.critico { background: #FCEBEB; border: 1px solid #A32D2D; }
+.alerta-icone { font-size: 16px; flex-shrink: 0; }
+.alerta-titulo { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+.amarelo .alerta-titulo { color: #633806; }
+.critico .alerta-titulo { color: #791F1F; }
+.alerta-desc { font-size: 13px; line-height: 1.5; }
+.amarelo .alerta-desc { color: #854F0B; }
+.critico .alerta-desc { color: #A32D2D; }
+.mapa-placeholder { background: #f8f8f6; border-radius: 8px; height: 90px; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #aaa; border: 1px solid #eee; margin-bottom: 1rem; }
+.diario { background: #fff; border-radius: 12px; padding: 1.25rem; border: 1px solid #eee; margin-bottom: 1.5rem; }
+.diario-linha { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+.diario-linha:last-child { border-bottom: none; }
+.d-hora { font-size: 12px; color: #aaa; min-width: 45px; padding-top: 1px; }
+.d-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+.d-evento { font-size: 13px; font-weight: 500; color: #1a1a1a; }
+.d-detalhe { font-size: 12px; color: #888; margin-top: 2px; }
+.grafico-semana { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; align-items: end; }
+.grafico-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.grafico-barra-wrap { height: 80px; display: flex; align-items: flex-end; width: 100%; }
+.grafico-barra { width: 100%; border-radius: 4px 4px 0 0; min-height: 4px; }
+.grafico-label { font-size: 12px; color: #888; }
+.grafico-valor { font-size: 11px; color: #D85A30; font-weight: 600; }
+.tabela { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tabela th { text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.3px; border-bottom: 1px solid #eee; }
+.tabela td { padding: 10px 12px; border-bottom: 1px solid #f5f5f5; color: #1a1a1a; }
+.tabela tr:last-child td { border-bottom: none; }
+.tabela tr:hover td { background: #fafafa; }
+.td-placa { font-weight: 600; }
+.td-perda { color: #D85A30; font-weight: 600; }
+.config-item { margin-bottom: 1.25rem; }
+.config-label { display: block; font-size: 13px; font-weight: 500; color: #1a1a1a; margin-bottom: 6px; }
+.config-input { width: 100%; padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; color: #1a1a1a; background: #fff; outline: none; transition: border 0.12s; }
+.config-input:focus { border-color: #1D9E75; }
+.config-hint { font-size: 11px; color: #aaa; margin-top: 4px; }
+.btn-salvar { width: 100%; padding: 10px; background: #1D9E75; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.12s; margin-top: 0.5rem; }
+.btn-salvar:hover { background: #0F6E56; }
+.previa-desc { font-size: 13px; color: #888; margin-bottom: 1rem; line-height: 1.5; }
+.previa-linha { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+.previa-linha:last-of-type { border-bottom: none; }
+.previa-label { color: #666; }
+.previa-valor { font-weight: 600; color: #D85A30; }
+.previa-formula { background: #f8f8f6; border-radius: 8px; padding: 12px; margin-top: 1rem; }
+.formula-titulo { font-size: 11px; color: #888; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.3px; }
+.formula-txt { font-size: 13px; font-weight: 600; color: #1a1a1a; font-family: monospace; }
