@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Scripts backend com credenciais — NUNCA commitar
+resumo-diario.cjs
+teste-onix.cjs
+
+# Documentação interna
+HelpIntegracao6.7.pdf

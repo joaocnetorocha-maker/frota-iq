@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import './App.css'
+import { getVeiculosBeta, getResumoSemanaBeta, isBetaAtivo } from './dadosBeta'
 
-const veiculos = [
+const veiculosVazios = [
   { placa:'ONA-0964', carreta:'BUP-3259', motorista:'Alexandre F.', frota:'59977', status:'verde', statusTxt:'Normal', vel:'0 km/h', ignicao:false, parado:'0 min', paradoMin:0, perdaHoje:0, km:'0 km', perdaSemana:0, alertaTipo:null, alertaTitulo:'', alertaDesc:'', modelo:'Cavalo', rota:'—', diario:[{h:'—',cor:'#1D9E75',ev:'Aguardando dados reais do ONIXSAT',det:'Conectar API para carregar histórico'}]},
   { placa:'EPU-6518', carreta:'FUY-8940', motorista:'Jose Claudio S.', frota:'50400', status:'verde', statusTxt:'Normal', vel:'0 km/h', ignicao:false, parado:'0 min', paradoMin:0, perdaHoje:0, km:'0 km', perdaSemana:0, alertaTipo:null, alertaTitulo:'', alertaDesc:'', modelo:'Cavalo', rota:'—', diario:[{h:'—',cor:'#1D9E75',ev:'Aguardando dados reais do ONIXSAT',det:'Conectar API para carregar histórico'}]},
   { placa:'BRY-8J52', carreta:'DBC-5C58', motorista:'Marcos Barros', frota:'52528', status:'verde', statusTxt:'Normal', vel:'0 km/h', ignicao:false, parado:'0 min', paradoMin:0, perdaHoje:0, km:'0 km', perdaSemana:0, alertaTipo:null, alertaTitulo:'', alertaDesc:'', modelo:'Cavalo', rota:'—', diario:[{h:'—',cor:'#1D9E75',ev:'Aguardando dados reais do ONIXSAT',det:'Conectar API para carregar histórico'}]},
@@ -31,6 +32,26 @@ export default function App() {
   })
   const [configTemp, setConfigTemp] = useState(config)
   const [salvo, setSalvo] = useState(false)
+  const [beta] = useState(() => isBetaAtivo())
+  const [agora, setAgora] = useState(() => new Date())
+
+  // Atualiza data/hora a cada minuto e (no modo beta) força re-render dos dados simulados
+  useEffect(() => {
+    const id = setInterval(() => setAgora(new Date()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Fonte de dados: beta = simulado vivo / off = vazio aguardando ONIXSAT
+  const veiculos = useMemo(
+    () => (beta ? getVeiculosBeta() : veiculosVazios),
+    [beta, agora]
+  )
+
+  // Resumo semanal pra tela Relatório (só faz sentido no beta)
+  const resumoSemana = useMemo(
+    () => (beta ? getResumoSemanaBeta() : null),
+    [beta, agora]
+  )
 
   const visiveis = veiculos.filter(v => frotaFiltro === 'Todas' || v.frota === frotaFiltro)
   const v = veiculos[selecionado]
@@ -72,8 +93,28 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
 
   const frotas = ['Todas', ...new Set(veiculos.map(v => v.frota))]
 
+  const dataHoraTxt = agora.toLocaleString('pt-BR', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  }).replace(',', ' —')
+
   return (
     <div className="app">
+      {beta && (
+        <div style={{
+          background: '#FFF4D6',
+          borderBottom: '1px solid #E8B923',
+          color: '#7A5A00',
+          padding: '8px 16px',
+          fontSize: 12,
+          fontWeight: 600,
+          textAlign: 'center',
+          letterSpacing: '0.3px',
+          fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+        }}>
+          VISUALIZAÇÃO COM DADOS DE DEMONSTRAÇÃO · INTEGRAÇÃO ONIXSAT EM ANDAMENTO
+        </div>
+      )}
       <div className="topo">
         <div className="logo">frota<span>IQ</span></div>
         <nav className="nav">
@@ -81,17 +122,49 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
           <button className={`nav-btn ${tela === 'relatorio' ? 'ativo' : ''}`} onClick={() => setTela('relatorio')}>Relatório</button>
           <button className={`nav-btn ${tela === 'config' ? 'ativo' : ''}`} onClick={() => setTela('config')}>Configurações</button>
         </nav>
-        <div className="data-hora">23 abr 2025 — 15:30</div>
+        <div className="data-hora">{dataHoraTxt}</div>
       </div>
 
       {tela === 'painel' && (
         <>
-          <div className="filtro-bar">
-            {frotas.map(f => (
-              <button key={f} className={`filtro-btn ${frotaFiltro === f ? 'ativo' : ''}`} onClick={() => setFrotaFiltro(f)}>
-                {f === 'Todas' ? 'Todas as frotas' : `Frota ${f}`}
-              </button>
-            ))}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '12px 0 18px',
+            flexWrap: 'wrap',
+          }}>
+            <span style={{ fontSize: 13, color: '#666', fontWeight: 500 }}>
+              Filtrar por frota:
+            </span>
+            <select
+              value={frotaFiltro}
+              onChange={(e) => setFrotaFiltro(e.target.value)}
+              style={{
+                padding: '8px 32px 8px 14px',
+                fontSize: 13,
+                fontWeight: 500,
+                color: '#1a1a1a',
+                background: '#fff',
+                border: '1px solid #ddd',
+                borderRadius: 8,
+                cursor: 'pointer',
+                appearance: 'none',
+                backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23666' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 12px center',
+                minWidth: 200,
+              }}
+            >
+              {frotas.map(f => (
+                <option key={f} value={f}>
+                  {f === 'Todas' ? 'Todas as frotas' : `Frota ${f}`}
+                </option>
+              ))}
+            </select>
+            <span style={{ fontSize: 12, color: '#999', marginLeft: 'auto' }}>
+              Mostrando {visiveis.length} {visiveis.length === 1 ? 'veículo' : 'veículos'}
+            </span>
           </div>
 
           <div className="resumo-grid">
@@ -194,24 +267,54 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
         <>
           <div className="secao-titulo" style={{marginBottom:'1rem'}}>Resumo semanal da frota</div>
           <div className="resumo-grid" style={{marginBottom:'1.5rem'}}>
-            <div className="metrica"><div className="metrica-label">Total de viagens</div><div className="metrica-valor">—</div><div className="metrica-sub">aguardando ONIXSAT</div></div>
-            <div className="metrica"><div className="metrica-label">KM total rodado</div><div className="metrica-valor">—</div><div className="metrica-sub">aguardando ONIXSAT</div></div>
-            <div className="metrica"><div className="metrica-label">Perda total semana</div><div className="metrica-valor alerta">R$ 0</div><div className="metrica-sub">em marcha lenta</div></div>
-            <div className="metrica"><div className="metrica-label">Média por veículo</div><div className="metrica-valor alerta">R$ 0</div><div className="metrica-sub">por semana</div></div>
+            <div className="metrica">
+              <div className="metrica-label">Total de viagens</div>
+              <div className="metrica-valor">{resumoSemana ? resumoSemana.totalViagens : '—'}</div>
+              <div className="metrica-sub">{resumoSemana ? 'esta semana' : 'aguardando ONIXSAT'}</div>
+            </div>
+            <div className="metrica">
+              <div className="metrica-label">KM total rodado</div>
+              <div className="metrica-valor">{resumoSemana ? `${resumoSemana.kmTotalSemana.toLocaleString('pt-BR')} km` : '—'}</div>
+              <div className="metrica-sub">{resumoSemana ? 'esta semana' : 'aguardando ONIXSAT'}</div>
+            </div>
+            <div className="metrica">
+              <div className="metrica-label">Perda total semana</div>
+              <div className="metrica-valor alerta">R$ {resumoSemana ? resumoSemana.perdaSemana.toLocaleString('pt-BR') : '0'}</div>
+              <div className="metrica-sub">em marcha lenta</div>
+            </div>
+            <div className="metrica">
+              <div className="metrica-label">Média por veículo</div>
+              <div className="metrica-valor alerta">R$ {resumoSemana ? resumoSemana.mediaPorVeiculo.toLocaleString('pt-BR') : '0'}</div>
+              <div className="metrica-sub">por semana</div>
+            </div>
           </div>
 
           <div className="card-box" style={{marginBottom:'1.5rem'}}>
             <div className="secao-titulo">Desempenho por dia — esta semana</div>
             <div className="grafico-semana">
-              {semana.map((dia, i) => (
-                <div key={dia} className="grafico-col">
-                  <div className="grafico-barra-wrap">
-                    <div className="grafico-barra" style={{height: '4px', background:'#f0f0f0'}}></div>
+              {(resumoSemana ? resumoSemana.dias : semana.map(d => ({dia: d, valor: 0}))).map((d, i) => {
+                const max = resumoSemana ? Math.max(...resumoSemana.dias.map(x => x.valor), 1) : 1
+                const altura = resumoSemana ? Math.max(4, Math.round((d.valor / max) * 100)) : 4
+                const isHoje = i === ((new Date().getDay() + 6) % 7) // converte Dom=0 → Seg=0
+                return (
+                  <div key={d.dia} className="grafico-col">
+                    <div className="grafico-barra-wrap" style={{height: 110, display: 'flex', alignItems: 'flex-end', justifyContent: 'center'}}>
+                      <div
+                        className="grafico-barra"
+                        style={{
+                          height: `${altura}px`,
+                          width: '70%',
+                          background: d.valor === 0 ? '#f0f0f0' : (isHoje ? '#1D9E75' : '#D85A30'),
+                          borderRadius: '4px 4px 0 0',
+                          transition: 'height .3s ease',
+                        }}
+                      ></div>
+                    </div>
+                    <div className="grafico-label" style={{fontWeight: isHoje ? 600 : 400}}>{d.dia}</div>
+                    <div className="grafico-valor">R$ {d.valor.toLocaleString('pt-BR')}</div>
                   </div>
-                  <div className="grafico-label">{dia}</div>
-                  <div className="grafico-valor">R$ 0</div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
 
