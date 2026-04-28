@@ -66,10 +66,33 @@ function gerarVeiculo(base, agora) {
   // Perda em R$: paradoHoras × consumo (3,5 L/h) × diesel (R$ 6,50)
   const perdaHoje = Math.round((paradoMin / 60) * 3.5 * 6.50 * 100) / 100
 
-  // Score 0–100 — fonte única de verdade pra status visual.
-  // Mesma fórmula usada em App.jsx (planoAcao). Manter sincronizado!
-  // Score = 95 - paradoMin × 0.85. Quanto mais marcha lenta, menor o score.
-  const score = Math.max(0, Math.min(100, Math.round(95 - paradoMin * 0.85)))
+  // === Excesso de velocidade ===
+  // Limite considerado: 90 km/h (rodovia). Pico do dia + minutos acima.
+  const limiteVel = 90
+  const probExcesso = base.perfil === 'ruim' ? 0.75 : base.perfil === 'medio' ? 0.4 : 0.15
+  const teveExcesso = ignicao && rng(seed, 8) < probExcesso
+  const velMax = ignicao
+    ? Math.floor(75 + rng(seed, 9) * (base.perfil === 'ruim' ? 40 : base.perfil === 'medio' ? 22 : 12))
+    : 0
+  const excessoVelMin = teveExcesso
+    ? Math.floor(rng(seed, 10) * (base.perfil === 'ruim' ? 28 : base.perfil === 'medio' ? 12 : 4)) + 1
+    : 0
+
+  // === KM fora da rota ===
+  // Quanto o veículo se desviou do trajeto planejado no dia (km).
+  const kmDesvio = ignicao
+    ? Math.floor(rng(seed, 11) * (base.perfil === 'ruim' ? 38 : base.perfil === 'medio' ? 14 : 4))
+    : 0
+
+  // === Score composto 0–100 ===
+  // Fonte única de verdade pra status visual. Pondera 3 dimensões:
+  //   - marcha lenta: peso forte (problema crônico, custo direto)
+  //   - excesso de velocidade: peso médio (multas, desgaste, segurança)
+  //   - desvio de rota: peso leve (combustível, prazo, segurança)
+  // Score = 95 - paradoMin × 0.55 - excessoVelMin × 0.9 - kmDesvio × 0.4
+  const score = Math.max(0, Math.min(100, Math.round(
+    95 - paradoMin * 0.55 - excessoVelMin * 0.9 - kmDesvio * 0.4
+  )))
 
   // Status do card vem do score pra cor do dot bater com o número exibido:
   //   score 80+      → verde   (Normal)
@@ -114,6 +137,8 @@ function gerarVeiculo(base, agora) {
     ...base,
     status, statusTxt,
     vel: `${vel} km/h`,
+    velMax, limiteVel, excessoVelMin,
+    kmDesvio,
     ignicao,
     parado, paradoMin,
     perdaHoje, perdaSemana,

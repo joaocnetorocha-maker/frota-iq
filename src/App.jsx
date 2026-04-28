@@ -60,52 +60,134 @@ export default function App() {
   // Score 0–100 por motorista derivado do tempo em marcha lenta.
   // Quanto mais minutos parados com motor ligado, menor o score.
   const planoAcao = useMemo(() => {
-    const calcScore = (paradoMin) =>
-      Math.max(0, Math.min(100, Math.round(95 - paradoMin * 0.85)))
+    // Score composto: pondera marcha lenta + excesso de velocidade + desvio de rota.
+    // MESMA fórmula do dadosBeta.js — manter sincronizado!
+    const calcScore = (v) =>
+      Math.max(0, Math.min(100, Math.round(
+        95 - (v.paradoMin || 0) * 0.55 - (v.excessoVelMin || 0) * 0.9 - (v.kmDesvio || 0) * 0.4
+      )))
 
     const iniciaisDe = (nome) =>
       nome.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase()
 
+    // Identifica qual é a dor predominante do motorista (a que mais derrubou o score).
+    // Retorna 'marchaLenta' | 'velocidade' | 'desvio'.
+    const dorPrincipal = (v) => {
+      const dorML = (v.paradoMin || 0) * 0.55
+      const dorVel = (v.excessoVelMin || 0) * 0.9
+      const dorDesvio = (v.kmDesvio || 0) * 0.4
+      if (dorVel >= dorML && dorVel >= dorDesvio && dorVel > 5) return 'velocidade'
+      if (dorDesvio >= dorML && dorDesvio > 4) return 'desvio'
+      return 'marchaLenta'
+    }
+
+    // Retorna lista resumida das dimensões com problema, pra mostrar no "oQue"
+    const dimensoesComProblema = (v) => {
+      const lista = []
+      if (v.paradoMin > 18) lista.push(`marcha lenta (${v.parado})`)
+      if (v.excessoVelMin > 0) lista.push(`${v.excessoVelMin}min acima de ${v.limiteVel} km/h (pico ${v.velMax} km/h)`)
+      if (v.kmDesvio > 4) lista.push(`${v.kmDesvio} km fora da rota`)
+      return lista
+    }
+
     const sugestao = (v) => {
       const primNome = v.motorista.split(' ')[0]
-      // VERMELHO / CRÍTICO — score abaixo de 40
-      if (v.score < 40) {
+      const dor = dorPrincipal(v)
+      const dims = dimensoesComProblema(v)
+      const dimsTxt = dims.length > 0
+        ? dims.length === 1 ? dims[0] : `${dims.slice(0, -1).join(', ')} e ${dims[dims.length - 1]}`
+        : ''
+
+      // VERDE — score 80+
+      if (v.score >= 80) {
         return {
-          nivel: 'critico',
-          oQue: `Marcha lenta de ${v.parado} hoje. Perda projetada: R$ ${(v.perdaSemana * 4).toLocaleString('pt-BR')}/mês se o padrão continuar.`,
-          acao: `Conversar HOJE com ${primNome} sobre desligar o motor em esperas e descargas. Reduzir 50% recupera cerca de R$ ${Math.round(v.perdaSemana * 2).toLocaleString('pt-BR')} no mês.`,
-          exemplo: `Ex: "${primNome}, vi que ontem o motor ficou ligado ${v.parado} parado. Cada hora dessas custa cerca de R$ ${Math.round(3.5 * 6.5).toLocaleString('pt-BR')} de diesel. Combinamos de desligar sempre que parar mais de 5min?"`,
+          nivel: 'ok',
+          dor,
+          oQue: `Excelente desempenho esta semana. ${v.parado === '0 min' ? 'Sem marcha lenta registrada' : `Marcha lenta baixa (${v.parado})`}, ${v.excessoVelMin === 0 ? 'sem excesso de velocidade' : `pico de ${v.velMax} km/h`}, ${v.kmDesvio === 0 ? 'rotas seguidas à risca' : `${v.kmDesvio} km de desvio (dentro do aceitável)`}.`,
+          acao: `Manter o padrão. ${primNome} é referência de boa condução — vale reconhecer.`,
+          exemplo: `Ex: "${primNome}, parabéns pelos números dessa semana. Você tá entre os melhores da frota. Continua assim!"`,
         }
       }
-      // AMARELO ALTO — score entre 40 e 59
-      if (v.score < 60) {
-        return {
-          nivel: 'atencao',
-          oQue: `Tempo parado com motor ligado: ${v.parado}. Está acima da média da frota nesta semana.`,
-          acao: `Acompanhar ${primNome} ao longo da semana. Alinhar boas práticas em paradas e dar feedback positivo se melhorar.`,
-          exemplo: `Ex: "${primNome}, percebi que essa semana subiu um pouco o tempo parado com motor ligado. Tá tudo ok? Algum problema operacional ou cliente demorando? Se for hábito, vamos trabalhar pra reduzir."`,
+
+      // === MARCHA LENTA é a dor principal ===
+      if (dor === 'marchaLenta') {
+        if (v.score < 40) {
+          return {
+            nivel: 'critico', dor,
+            oQue: `Marcha lenta de ${v.parado} hoje. Perda projetada: R$ ${(v.perdaSemana * 4).toLocaleString('pt-BR')}/mês.${dims.length > 1 ? ` Também aparece: ${dims.filter(d => !d.includes('marcha lenta')).join(' e ')}.` : ''}`,
+            acao: `Conversar HOJE com ${primNome} sobre desligar o motor em esperas e descargas. Reduzir 50% recupera cerca de R$ ${Math.round(v.perdaSemana * 2).toLocaleString('pt-BR')} no mês.`,
+            exemplo: `Ex: "${primNome}, vi que ontem o motor ficou ligado ${v.parado} parado. Cada hora dessas custa cerca de R$ ${Math.round(3.5 * 6.5).toLocaleString('pt-BR')} de diesel. Combinamos de desligar sempre que parar mais de 5min?"`,
+          }
         }
-      }
-      // AMARELO BAIXO — score entre 60 e 79
-      if (v.score < 80) {
+        if (v.score < 60) {
+          return {
+            nivel: 'atencao', dor,
+            oQue: `Tempo parado com motor ligado: ${v.parado}. Acima da média da frota.${dims.length > 1 ? ` Também: ${dims.filter(d => !d.includes('marcha lenta')).join(', ')}.` : ''}`,
+            acao: `Acompanhar ${primNome} ao longo da semana. Alinhar boas práticas em paradas e dar feedback positivo se melhorar.`,
+            exemplo: `Ex: "${primNome}, percebi que essa semana subiu um pouco o tempo parado com motor ligado. Tá tudo ok? Algum problema operacional ou cliente demorando?"`,
+          }
+        }
         return {
-          nivel: 'observar',
-          oQue: `Aumento leve de marcha lenta nesta semana (${v.parado}). Ainda dentro do aceitável, mas vale observar.`,
-          acao: `Reforçar com ${primNome} a importância de desligar em paradas longas. Não exige conversa formal — pode ser no rádio mesmo.`,
+          nivel: 'observar', dor,
+          oQue: `Aumento leve de marcha lenta (${v.parado}). Ainda dentro do aceitável, mas vale observar.`,
+          acao: `Reforçar com ${primNome} a importância de desligar em paradas longas. Não exige conversa formal — pode ser no rádio.`,
           exemplo: `Ex: "${primNome}, beleza? Só um lembrete pra desligar o motor sempre que parar mais de 5min, tá? Tá indo bem, é só pra manter."`,
         }
       }
-      // VERDE — score 80+
+
+      // === VELOCIDADE é a dor principal ===
+      if (dor === 'velocidade') {
+        if (v.score < 40) {
+          return {
+            nivel: 'critico', dor,
+            oQue: `${v.excessoVelMin}min acima de ${v.limiteVel} km/h hoje, com pico de ${v.velMax} km/h. Risco de multa, acidente e desgaste de pneu/freio.${v.paradoMin > 18 ? ` Também: marcha lenta de ${v.parado}.` : ''}`,
+            acao: `Conversar HOJE com ${primNome}. Velocidade alta é o item de maior risco — multa por excesso (>20%) custa R$ 880 e suspende a CNH. Não pode esperar.`,
+            exemplo: `Ex: "${primNome}, o sistema mostrou que você passou de ${v.limiteVel} km/h por ${v.excessoVelMin}min ontem, com pico de ${v.velMax}. Isso vira multa pesada e desgasta pneu/freio. Bora segurar a mão? Vou acompanhar essa semana."`,
+          }
+        }
+        if (v.score < 60) {
+          return {
+            nivel: 'atencao', dor,
+            oQue: `Pico de ${v.velMax} km/h e ${v.excessoVelMin}min acima do limite. Acima da média da frota.${v.paradoMin > 18 ? ` Também: ${v.parado} de marcha lenta.` : ''}`,
+            acao: `Alinhar com ${primNome} sobre limite de velocidade. Se ele rodou em rodovia (90 km/h é o teto), explicar que mesmo 5–10 km/h acima já entra em desgaste de freio e multa.`,
+            exemplo: `Ex: "${primNome}, vi que o pico foi ${v.velMax} km/h essa semana. Tá apertado de prazo? Vamos rever a rota juntos. Acima de ${v.limiteVel} é multa e desgaste."`,
+          }
+        }
+        return {
+          nivel: 'observar', dor,
+          oQue: `Pico de ${v.velMax} km/h, ${v.excessoVelMin}min acima do limite. Pequeno excesso pontual.`,
+          acao: `Comentar com ${primNome} no rádio que o pico chamou atenção. Não é pra cobrar, só pra manter o radar ligado.`,
+          exemplo: `Ex: "${primNome}, suave aí, pico de ${v.velMax} km/h hoje. Só pra ficar atento, ${v.limiteVel} é o teto."`,
+        }
+      }
+
+      // === DESVIO DE ROTA é a dor principal ===
+      if (v.score < 40) {
+        return {
+          nivel: 'critico', dor,
+          oQue: `${v.kmDesvio} km fora da rota planejada hoje. Combustível extra, possível parada não autorizada ou risco de carga.${v.paradoMin > 18 ? ` Também: marcha lenta de ${v.parado}.` : ''}`,
+          acao: `Conversar HOJE com ${primNome} sobre o desvio. Pedir explicação. Se for parada pessoal, alinhar política de uso. Se for problema na rota, atualizar planejamento.`,
+          exemplo: `Ex: "${primNome}, o sistema apontou ${v.kmDesvio} km fora da rota planejada ontem. Aconteceu algum imprevisto? Preciso entender pra evitar combustível extra e risco com a carga."`,
+        }
+      }
+      if (v.score < 60) {
+        return {
+          nivel: 'atencao', dor,
+          oQue: `${v.kmDesvio} km de desvio da rota planejada. Acima da média.${v.paradoMin > 18 ? ` Também: ${v.parado} parado com motor ligado.` : ''}`,
+          acao: `Conferir com ${primNome} qual foi o motivo do desvio. Pode ser parada legítima (banheiro, abastecer) ou um problema. Vale entender pra ajustar planejamento.`,
+          exemplo: `Ex: "${primNome}, vi que rolou ${v.kmDesvio} km fora da rota. Foi alguma necessidade? Se for sempre o mesmo trecho, podemos atualizar o trajeto base."`,
+        }
+      }
       return {
-        nivel: 'ok',
-        oQue: `Excelente desempenho esta semana. ${v.parado === '0 min' ? 'Sem marcha lenta registrada.' : `Apenas ${v.parado} de marcha lenta no dia.`}`,
-        acao: `Manter o padrão. ${primNome} é referência de boa condução — vale reconhecer.`,
-        exemplo: `Ex: "${primNome}, parabéns pelos números dessa semana. Você tá entre os melhores da frota em consumo. Continua assim!"`,
+        nivel: 'observar', dor,
+        oQue: `${v.kmDesvio} km fora da rota. Pequeno desvio, talvez parada pra abastecer ou contornar trânsito.`,
+        acao: `Não precisa intervir. Só registrar o padrão pra acompanhar se vira tendência.`,
+        exemplo: `Ex: nenhum contato necessário — desvio dentro do esperado.`,
       }
     }
 
     const comScore = visiveis.map(v => {
-      const score = calcScore(v.paradoMin)
+      const score = calcScore(v)
       const base = { ...v, score, iniciais: iniciaisDe(v.motorista) }
       const sug = sugestao(base)
       return { ...base, ...sug }
@@ -425,6 +507,19 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                       Parado: <strong style={{color: '#1a1a1a'}}>{ve.parado}</strong> · Perda hoje: <strong style={{color: '#D85A30'}}>R$ {calcPerda(ve.paradoMin).toFixed(0)}</strong>
                     </div>
                   )}
+                  {((ve.excessoVelMin || 0) > 0 || (ve.kmDesvio || 0) > 4) && (
+                    <div style={{
+                      fontSize: 11, color: '#888', marginTop: 4,
+                    }}>
+                      {(ve.excessoVelMin || 0) > 0 && (
+                        <span>Pico <strong style={{color: '#D85A30'}}>{ve.velMax} km/h</strong></span>
+                      )}
+                      {(ve.excessoVelMin || 0) > 0 && (ve.kmDesvio || 0) > 4 && ' · '}
+                      {(ve.kmDesvio || 0) > 4 && (
+                        <span><strong style={{color: '#D85A30'}}>{ve.kmDesvio} km</strong> fora da rota</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -443,6 +538,24 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                   <div className="det-item"><div className="det-label">Ignição</div><div className={`det-valor ${v.ignicao ? 'alerta' : ''}`}>{v.ignicao ? 'Ligada' : 'Desligada'}</div></div>
                   <div className="det-item"><div className="det-label">Tempo parado ligado</div><div className="det-valor alerta">{v.parado}</div></div>
                   <div className="det-item"><div className="det-label">Perda estimada</div><div className="det-valor alerta">R$ {calcPerda(v.paradoMin).toFixed(2)}</div></div>
+                  <div className="det-item">
+                    <div className="det-label">Pico do dia</div>
+                    <div className={`det-valor ${(v.velMax || 0) > (v.limiteVel || 90) ? 'alerta' : ''}`}>
+                      {v.velMax || 0} km/h
+                    </div>
+                  </div>
+                  <div className="det-item">
+                    <div className="det-label">Excesso de velocidade</div>
+                    <div className={`det-valor ${(v.excessoVelMin || 0) > 0 ? 'alerta' : ''}`}>
+                      {v.excessoVelMin > 0 ? `${v.excessoVelMin} min acima de ${v.limiteVel} km/h` : 'sem excesso'}
+                    </div>
+                  </div>
+                  <div className="det-item">
+                    <div className="det-label">Desvio da rota</div>
+                    <div className={`det-valor ${(v.kmDesvio || 0) > 8 ? 'alerta' : ''}`}>
+                      {v.kmDesvio > 0 ? `${v.kmDesvio} km fora` : 'rota seguida'}
+                    </div>
+                  </div>
                 </div>
                 {v.alertaTipo && (
                   <div className={`alerta-box ${v.alertaTipo}`}>
