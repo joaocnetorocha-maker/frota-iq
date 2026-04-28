@@ -1,22 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import './App.css'
-import { getVeiculosBeta, getResumoSemanaBeta, isBetaAtivo } from './dadosBeta'
-
-const veiculosVazios = [
-  { placa:'ONA-0964', carreta:'BUP-3259', motorista:'Alexandre F.', frota:'59977', status:'verde', statusTxt:'Normal', vel:'0 km/h', ignicao:false, parado:'0 min', paradoMin:0, perdaHoje:0, km:'0 km', perdaSemana:0, alertaTipo:null, alertaTitulo:'', alertaDesc:'', modelo:'Cavalo', rota:'—', diario:[{h:'—',cor:'#1D9E75',ev:'Aguardando dados reais do ONIXSAT',det:'Conectar API para carregar histórico'}]},
-  { placa:'EPU-6518', carreta:'FUY-8940', motorista:'Jose Claudio S.', frota:'50400', status:'verde', statusTxt:'Normal', vel:'0 km/h', ignicao:false, parado:'0 min', paradoMin:0, perdaHoje:0, km:'0 km', perdaSemana:0, alertaTipo:null, alertaTitulo:'', alertaDesc:'', modelo:'Cavalo', rota:'—', diario:[{h:'—',cor:'#1D9E75',ev:'Aguardando dados reais do ONIXSAT',det:'Conectar API para carregar histórico'}]},
-  { placa:'BRY-8J52', carreta:'DBC-5C58', motorista:'Marcos Barros', frota:'52528', status:'verde', statusTxt:'Normal', vel:'0 km/h', ignicao:false, parado:'0 min', paradoMin:0, perdaHoje:0, km:'0 km', perdaSemana:0, alertaTipo:null, alertaTitulo:'', alertaDesc:'', modelo:'Cavalo', rota:'—', diario:[{h:'—',cor:'#1D9E75',ev:'Aguardando dados reais do ONIXSAT',det:'Conectar API para carregar histórico'}]},
-  { placa:'DEI-3F49', carreta:'FFF-6476', motorista:'Jose Wilson', frota:'52555', status:'verde', statusTxt:'Normal', vel:'0 km/h', ignicao:false, parado:'0 min', paradoMin:0, perdaHoje:0, km:'0 km', perdaSemana:0, alertaTipo:null, alertaTitulo:'', alertaDesc:'', modelo:'Cavalo', rota:'—', diario:[{h:'—',cor:'#1D9E75',ev:'Aguardando dados reais do ONIXSAT',det:'Conectar API para carregar histórico'}]},
-  { placa:'FRY-8849', carreta:'FDB-7457', motorista:'Clodoaldo P.', frota:'52742', status:'verde', statusTxt:'Normal', vel:'0 km/h', ignicao:false, parado:'0 min', paradoMin:0, perdaHoje:0, km:'0 km', perdaSemana:0, alertaTipo:null, alertaTitulo:'', alertaDesc:'', modelo:'Cavalo', rota:'—', diario:[{h:'—',cor:'#1D9E75',ev:'Aguardando dados reais do ONIXSAT',det:'Conectar API para carregar histórico'}]},
-  { placa:'FME-3030', carreta:'IGO-9738', motorista:'Fabiano Barros', frota:'52787', status:'verde', statusTxt:'Normal', vel:'0 km/h', ignicao:false, parado:'0 min', paradoMin:0, perdaHoje:0, km:'0 km', perdaSemana:0, alertaTipo:null, alertaTitulo:'', alertaDesc:'', modelo:'Cavalo', rota:'—', diario:[{h:'—',cor:'#1D9E75',ev:'Aguardando dados reais do ONIXSAT',det:'Conectar API para carregar histórico'}]},
-  { placa:'BYJ-8J52', carreta:'BTB-3706', motorista:'Claudio Cordeiro', frota:'52799', status:'verde', statusTxt:'Normal', vel:'0 km/h', ignicao:false, parado:'0 min', paradoMin:0, perdaHoje:0, km:'0 km', perdaSemana:0, alertaTipo:null, alertaTitulo:'', alertaDesc:'', modelo:'Cavalo', rota:'—', diario:[{h:'—',cor:'#1D9E75',ev:'Aguardando dados reais do ONIXSAT',det:'Conectar API para carregar histórico'}]},
-  { placa:'FPQ-7910', carreta:'CWQ-3781', motorista:'Fabio Alexandre', frota:'52902', status:'verde', statusTxt:'Normal', vel:'0 km/h', ignicao:false, parado:'0 min', paradoMin:0, perdaHoje:0, km:'0 km', perdaSemana:0, alertaTipo:null, alertaTitulo:'', alertaDesc:'', modelo:'Cavalo', rota:'—', diario:[{h:'—',cor:'#1D9E75',ev:'Aguardando dados reais do ONIXSAT',det:'Conectar API para carregar histórico'}]},
-  { placa:'BPO-8J52', carreta:'BWS-3510', motorista:'Helio Virgens', frota:'58513', status:'verde', statusTxt:'Normal', vel:'0 km/h', ignicao:false, parado:'0 min', paradoMin:0, perdaHoje:0, km:'0 km', perdaSemana:0, alertaTipo:null, alertaTitulo:'', alertaDesc:'', modelo:'Cavalo', rota:'—', diario:[{h:'—',cor:'#1D9E75',ev:'Aguardando dados reais do ONIXSAT',det:'Conectar API para carregar histórico'}]},
-  { placa:'MIH-9D87', carreta:'DVT-5536', motorista:'Vagner Alves', frota:'58516', status:'verde', statusTxt:'Normal', vel:'0 km/h', ignicao:false, parado:'0 min', paradoMin:0, perdaHoje:0, km:'0 km', perdaSemana:0, alertaTipo:null, alertaTitulo:'', alertaDesc:'', modelo:'Cavalo', rota:'—', diario:[{h:'—',cor:'#1D9E75',ev:'Aguardando dados reais do ONIXSAT',det:'Conectar API para carregar histórico'}]},
-  { placa:'FRV-7030', carreta:'CYN-9548', motorista:'Jose Sidney', frota:'58588', status:'verde', statusTxt:'Normal', vel:'0 km/h', ignicao:false, parado:'0 min', paradoMin:0, perdaHoje:0, km:'0 km', perdaSemana:0, alertaTipo:null, alertaTitulo:'', alertaDesc:'', modelo:'Cavalo', rota:'—', diario:[{h:'—',cor:'#1D9E75',ev:'Aguardando dados reais do ONIXSAT',det:'Conectar API para carregar histórico'}]},
-  { placa:'FDB-1A70', carreta:'BXF-4030', motorista:'Franklin Costa', frota:'59975', status:'verde', statusTxt:'Normal', vel:'0 km/h', ignicao:false, parado:'0 min', paradoMin:0, perdaHoje:0, km:'0 km', perdaSemana:0, alertaTipo:null, alertaTitulo:'', alertaDesc:'', modelo:'Cavalo', rota:'—', diario:[{h:'—',cor:'#1D9E75',ev:'Aguardando dados reais do ONIXSAT',det:'Conectar API para carregar histórico'}]},
-  { placa:'GUX-1032', carreta:'BWS-3032', motorista:'Icaro', frota:'21366', status:'verde', statusTxt:'Normal', vel:'0 km/h', ignicao:false, parado:'0 min', paradoMin:0, perdaHoje:0, km:'0 km', perdaSemana:0, alertaTipo:null, alertaTitulo:'', alertaDesc:'', modelo:'Cavalo', rota:'—', diario:[{h:'—',cor:'#1D9E75',ev:'Aguardando dados reais do ONIXSAT',det:'Conectar API para carregar histórico'}]},
-]
+import { getVeiculosReais, getResumoSemanaReais } from './dadosReais'
 
 const semana = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom']
 
@@ -32,27 +16,51 @@ export default function App() {
   })
   const [configTemp, setConfigTemp] = useState(config)
   const [salvo, setSalvo] = useState(false)
-  const [beta] = useState(() => isBetaAtivo())
   const [agora, setAgora] = useState(() => new Date())
+  const [veiculos, setVeiculos] = useState([])
+  const [resumoSemana, setResumoSemana] = useState(null)
+  const [carregando, setCarregando] = useState(true)
+  const [erro, setErro] = useState(null)
+  const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null)
 
-  // Atualiza data/hora a cada minuto e (no modo beta) força re-render dos dados simulados
+  // Atualiza data/hora a cada minuto (independente do polling de dados)
   useEffect(() => {
     const id = setInterval(() => setAgora(new Date()), 60_000)
     return () => clearInterval(id)
   }, [])
 
-  // Fonte de dados: beta = simulado vivo / off = vazio aguardando ONIXSAT
-  const veiculos = useMemo(
-    () => (beta ? getVeiculosBeta() : veiculosVazios),
-    [beta, agora]
-  )
+  // Polling de dados reais via /api/dados (a cada 30s)
+  useEffect(() => {
+    let mounted = true
+    async function carregar() {
+      try {
+        const veis = await getVeiculosReais()
+        if (!mounted) return
+        // /api/dados ainda não devolve `carreta` — colocamos placeholder pra UI não quebrar
+        setVeiculos(veis.map(v => ({ ...v, carreta: v.carreta || '—' })))
+        setUltimaAtualizacao(new Date())
+        setErro(null)
+      } catch (e) {
+        if (!mounted) return
+        setErro(e.message || 'Falha ao carregar dados')
+      } finally {
+        if (mounted) setCarregando(false)
+      }
+    }
+    carregar()
+    const id = setInterval(carregar, 30_000)
+    return () => { mounted = false; clearInterval(id) }
+  }, [])
 
-  // Resumo semanal pra tela Relatório — respeita o filtro de frota
-  // (quando a frota é específica, todos os totais ficam restritos a ela)
-  const resumoSemana = useMemo(
-    () => (beta ? getResumoSemanaBeta(frotaFiltro) : null),
-    [beta, agora, frotaFiltro]
-  )
+  // Resumo semanal — recalcula quando o filtro de frota muda ou chega novo update
+  useEffect(() => {
+    if (carregando) return
+    let mounted = true
+    getResumoSemanaReais(frotaFiltro)
+      .then(r => { if (mounted) setResumoSemana(r) })
+      .catch(() => {})
+    return () => { mounted = false }
+  }, [frotaFiltro, ultimaAtualizacao, carregando])
 
   const visiveis = veiculos.filter(v => frotaFiltro === 'Todas' || v.frota === frotaFiltro)
 
@@ -264,21 +272,38 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
 
   return (
     <div className="app">
-      {beta && (
-        <div style={{
-          background: '#FFF4D6',
-          borderBottom: '1px solid #E8B923',
-          color: '#7A5A00',
-          padding: '8px 16px',
-          fontSize: 12,
-          fontWeight: 600,
-          textAlign: 'center',
-          letterSpacing: '0.3px',
-          fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
-        }}>
-          VISUALIZAÇÃO COM DADOS DE DEMONSTRAÇÃO · INTEGRAÇÃO ONIXSAT EM ANDAMENTO
-        </div>
-      )}
+      {(() => {
+        // Banner de status da conexão com /api/dados
+        let bg = '#E8F7EE', bd = '#1D9E75', cor = '#0E5F46', txt = ''
+        if (erro) {
+          bg = '#FDECEC'; bd = '#D14343'; cor = '#7A1F1F'
+          txt = `ERRO AO CARREGAR DADOS — ${erro}`
+        } else if (carregando) {
+          bg = '#EEE'; bd = '#999'; cor = '#444'
+          txt = 'CONECTANDO AO SERVIDOR...'
+        } else if (ultimaAtualizacao) {
+          const seg = Math.round((agora - ultimaAtualizacao) / 1000)
+          const quando = seg < 60 ? `há ${seg}s` : `há ${Math.round(seg / 60)} min`
+          txt = `DADOS REAIS · ÚLTIMA ATUALIZAÇÃO ${quando} · ${veiculos.length} VEÍCULOS`
+        } else {
+          txt = 'DADOS REAIS'
+        }
+        return (
+          <div style={{
+            background: bg,
+            borderBottom: `1px solid ${bd}`,
+            color: cor,
+            padding: '8px 16px',
+            fontSize: 12,
+            fontWeight: 600,
+            textAlign: 'center',
+            letterSpacing: '0.3px',
+            fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+          }}>
+            {txt}
+          </div>
+        )
+      })()}
       <div className="topo">
         <div className="logo">frota<span>IQ</span></div>
         <nav className="nav">
