@@ -66,11 +66,19 @@ function gerarVeiculo(base, agora) {
   // Perda em R$: paradoHoras × consumo (3,5 L/h) × diesel (R$ 6,50)
   const perdaHoje = Math.round((paradoMin / 60) * 3.5 * 6.50 * 100) / 100
 
-  // Status derivado do tempo parado
+  // Score 0–100 — fonte única de verdade pra status visual.
+  // Mesma fórmula usada em App.jsx (planoAcao). Manter sincronizado!
+  // Score = 95 - paradoMin × 0.85. Quanto mais marcha lenta, menor o score.
+  const score = Math.max(0, Math.min(100, Math.round(95 - paradoMin * 0.85)))
+
+  // Status do card vem do score pra cor do dot bater com o número exibido:
+  //   score 80+      → verde   (Normal)
+  //   score 60–79    → amarelo (Atenção)
+  //   score < 60     → vermelho (Crítico)
   let status, statusTxt
-  if (paradoMin > 60)      { status = 'vermelho'; statusTxt = 'Crítico'  }
-  else if (paradoMin > 30) { status = 'amarelo';  statusTxt = 'Atenção'  }
-  else                     { status = 'verde';    statusTxt = 'Normal'   }
+  if (score < 60)      { status = 'vermelho'; statusTxt = 'Crítico' }
+  else if (score < 80) { status = 'amarelo';  statusTxt = 'Atenção' }
+  else                 { status = 'verde';    statusTxt = 'Normal'  }
 
   const km = ignicao
     ? `${Math.floor(rng(seed, 4) * 350 + 80)} km`
