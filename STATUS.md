@@ -2,7 +2,10 @@
 
 > **Como usar este arquivo:** No início de cada sessão com Claude, peça pra ele ler `STATUS.md`. No fim da sessão, peça pra atualizar este arquivo com o que mudou. Assim nada se perde entre sessões.
 
-**Última atualização:** 27/04/2026
+**Última atualização:** 27/04/2026 (deploy público do modo beta no ar)
+
+> 🌐 **Link público pra mostrar pra clientes:** https://frota-iq.vercel.app/?beta=on
+> Sem `?beta=on` o site abre vazio (modo normal aguardando API real).
 
 ---
 

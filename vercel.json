@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/coletar.js": {
+      "maxDuration": 30
+    },
+    "api/dados.js": {
+      "maxDuration": 10
+    }
+  }
+}

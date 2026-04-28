@@ -1,15 +1,17 @@
-# Email para Trucks Control — Liberação de credenciais Webservice ONIXSAT
+# Email para Eduardo Munhoz (Trucks Control / TCsat) — Liberação de credenciais Webservice ONIXSAT
 
-**Para:** celulasp@truckscontrol.com.br
-**Assunto:** Solicitação de credenciais do Webservice — Cliente João Carlos Neto Rocha
+**Para:** Eduardo.santos@tcsat.com.br
+**Assunto:** Solicitação de credenciais do Webservice ONIXSAT — Cliente João Carlos Neto Rocha
 
 ---
 
-Prezados,
+Olá Eduardo, tudo bem?
 
-Conforme orientação do Diego (atendimento via WhatsApp) e seguindo a documentação oficial disponível em **https://suporte.truckscontrol.com.br/integracao/**, encaminho por este canal a solicitação formal das credenciais do Webservice ONIXSAT.
+Meu nome é João Carlos Neto Rocha, sou cliente Trucks (login `joaocarlos`, frota de 13 veículos). Seu contato me foi passado pelo Gustavo (atendimento Trucks) como o consultor responsável por liberação de Webservice de integração.
 
-## Identificação
+Encaminho a solicitação formal das credenciais do Webservice ONIXSAT, baseada na documentação oficial disponível em **https://suporte.truckscontrol.com.br/integracao/** (manual de Integração WebService, versão 6.7).
+
+## Identificação do cliente
 
 - **Cliente:** João Carlos Neto Rocha
 - **Email cadastrado:** joaocarlosnetorocha@gmail.com
@@ -19,12 +21,12 @@ Conforme orientação do Diego (atendimento via WhatsApp) e seguindo a documenta
 
 ## O que solicito
 
-Após estudar a documentação oficial (manual de Integração WebService, versão 6.7), identifiquei que preciso de credenciais específicas para o Webservice, distintas das credenciais do portal. Solicito:
+Após estudar o manual oficial, identifiquei que preciso de credenciais específicas para o Webservice, distintas das credenciais do portal. Especificamente:
 
 1. **Login do Webservice (numérico)** — conforme exemplo da documentação (`<login>12345678910</login>`), entendo que o login esperado é o CPF ou CNPJ do cliente. Por favor, confirmar e enviar.
 2. **Senha do Webservice** — separada da senha de acesso ao portal.
-3. **Confirmação do espelhamento** — a documentação indica que as requisições retornam *"informações dos equipamentos espelhados para sua conta"*. Solicito confirmação de que os 13 veículos da minha frota estão espelhados para a conta que receberá as credenciais. Caso ainda não estejam, peço que o espelhamento seja feito.
-4. **Formato de compressão** — manter o padrão **ZIP** (conforme item 4 da seção "XML para Requisições" do manual). Se preferirem GZIP, também atendo.
+3. **Confirmação do espelhamento** — a documentação indica que as requisições retornam *"informações dos equipamentos espelhados para sua conta"*. Peço confirmação de que os 13 veículos da minha frota estão espelhados para a conta que receberá as credenciais. Caso ainda não estejam, peço que o espelhamento seja feito.
+4. **Formato de compressão** — manter o padrão **ZIP** (item 4 da seção "XML para Requisições"). Se preferirem GZIP, também atendo.
 
 ## Requisições que pretendo utilizar
 
@@ -34,18 +36,22 @@ Para fins de implementação, planejo consumir inicialmente:
 - `RequestMensagemCB` — para receber as mensagens dos veículos (lat/lon, velocidade, eventos de ignição, hodômetro)
 - `RequestTelemetria` — caso disponível na conta, para coletar dados de marcha lenta
 
-Endpoint de produção: `https://webservice.newrastreamentoonline.com.br` (HTTPS, conforme exigido desde 04/09/2023).
+**Endpoint de produção:** `https://webservice.newrastreamentoonline.com.br` (HTTPS, conforme exigido desde 04/09/2023).
 
 ## Contexto técnico já validado
 
-- O endpoint **responde** corretamente às requisições POST que envio
-- O XML segue o formato documentado (`<RequestMensagemCB>` com `<login>`, `<senha>`, `<mId>`)
-- Atualmente recebo o **erro código 1**: *"Atributos para leitura de requisição inválidos. (Atributos, login e/ou senha incorretos.)"* — confirmando que a estrutura do XML está aceita pelo servidor; o que falta são as credenciais corretas.
+Já fiz testes preliminares contra o endpoint e confirmo:
 
-Fico no aguardo do retorno. Qualquer informação adicional sobre minha conta que precisem para liberar a integração, é só pedir.
+- O endpoint **responde** corretamente às requisições POST que envio
+- O XML segue o formato documentado (`<RequestVeiculo>` com `<login>`, `<senha>`)
+- Atualmente recebo o **erro código 1**: *"Atributos para leitura de requisição inválidos. (Atributos, login e/ou senha incorretos.)"* — confirmando que a estrutura do XML está aceita pelo servidor; o que falta apenas são as credenciais corretas.
+
+Em outras palavras, do meu lado a integração está pronta para funcionar assim que receber as credenciais válidas.
+
+Fico no aguardo do retorno. Qualquer informação adicional que precise sobre minha conta para liberar a integração, é só pedir. Pode me chamar também pelo telefone abaixo se for mais prático.
 
 Atenciosamente,
 
 **João Carlos Neto Rocha**
-joaocarlosnetorocha@gmail.com
-[seu telefone aqui]
+📧 joaocarlosnetorocha@gmail.com
+📱 (11) 99966-6630

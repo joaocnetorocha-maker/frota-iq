@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "adm-zip": "^0.5.17",
     "axios": "^1.15.2",
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.6",

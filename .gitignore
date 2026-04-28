@@ -26,6 +26,12 @@ dist-ssr
 # Scripts backend com credenciais — NUNCA commitar
 resumo-diario.cjs
 teste-onix.cjs
+teste-onix-mensagens.cjs
+
+# Variáveis de ambiente — NUNCA commitar
+.env
+.env.local
+.env.production
 
 # Documentação interna
 HelpIntegracao6.7.pdf
