@@ -193,19 +193,39 @@ export function getVeiculosBeta() {
 // Gera resumo agregado da semana — usado na tela Relatório.
 // Distribui a perda pelos dias da semana com padrão realista
 // (Sex pior, Dom zerado, etc) e calcula viagens, KM, perda total.
-export function getResumoSemanaBeta() {
+//
+// Aceita um filtro opcional `frotaFiltro` (string com o número da frota,
+// ou 'Todas' pra agregar tudo). Quando vem uma frota específica, todos os
+// totais (perda, KM, viagens) ficam restritos a esse veículo.
+export function getResumoSemanaBeta(frotaFiltro = 'Todas') {
   const agora = new Date()
-  const veiculos = veiculosBase.map(b => gerarVeiculo(b, agora))
+  const todos = veiculosBase.map(b => gerarVeiculo(b, agora))
+  const veiculos = frotaFiltro === 'Todas'
+    ? todos
+    : todos.filter(v => v.frota === frotaFiltro)
+
+  const labels = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
+
+  // Sem veículos no filtro: devolve resumo zerado (UI mostra graciosamente)
+  if (veiculos.length === 0) {
+    return {
+      dias: labels.map(d => ({ dia: d, valor: 0 })),
+      perdaSemana: 0,
+      mediaPorVeiculo: 0,
+      kmTotalSemana: 0,
+      totalViagens: 0,
+      veiculos: [],
+    }
+  }
 
   // Pesos por dia da semana (Seg=0 ... Dom=6)
   // Sex tipicamente é o pior dia, Dom não trabalha
   const pesosDia = [0.85, 0.95, 1.0, 1.05, 1.30, 0.45, 0.0]
-  const labels = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
 
   const perdaDiariaBase = veiculos.reduce((s, v) => s + v.perdaHoje, 0)
 
   const dias = labels.map((label, i) => {
-    const seed = hash(label + agora.toDateString())
+    const seed = hash(label + agora.toDateString() + frotaFiltro)
     const variacao = 0.85 + rng(seed, 1) * 0.3   // ±15% de ruído
     const valor = Math.round(perdaDiariaBase * pesosDia[i] * variacao)
     return { dia: label, valor }
