@@ -22,7 +22,7 @@ function veiculoVazio(v) {
   return {
     placa: v.placa || '—',
     motorista: v.motorista || 'Não vinculado',
-    frota: String(v.vei_id),
+    frota: v.placa || String(v.vei_id),
     veiID: v.vei_id,
     chassi: v.chassi,
     status: 'verde',
@@ -123,6 +123,16 @@ function formatarParado(min) {
   return h > 0 ? `${h}h ${m}min` : `${m} min`
 }
 
+// "YYYY-MM-DD" em Brasília
+function dataBrasilia(d = new Date()) {
+  const ms = d.getTime() + (-3) * 3600_000
+  const dt = new Date(ms)
+  const y = dt.getUTCFullYear()
+  const m = String(dt.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(dt.getUTCDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 's-maxage=15, stale-while-revalidate=30')
 
@@ -130,6 +140,11 @@ export default async function handler(req, res) {
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_KEY
   )
+
+  // Determina qual dia consultar
+  const hojeBR = dataBrasilia()
+  const dataConsulta = (req.query?.data) || hojeBR
+  const ehHoje = dataConsulta === hojeBR
 
   try {
     // Busca todos os veículos cadastrados
@@ -139,6 +154,71 @@ export default async function handler(req, res) {
 
     if (errVei) throw new Error('Erro ao buscar veículos: ' + errVei.message)
 
+    // === MODO HISTÓRICO: lê snapshot da tabela historico_dia ===
+    if (!ehHoje) {
+      const { data: hist, error: errHist } = await supabase
+        .from('historico_dia')
+        .select('*')
+        .eq('data', dataConsulta)
+
+      if (errHist) throw new Error('Erro histórico: ' + errHist.message)
+
+      // Mapa por vei_id pra juntar com cadastro de veículos
+      const histPorVei = {}
+      for (const h of hist || []) histPorVei[h.vei_id] = h
+
+      const frota = (veiculos || []).map(v => {
+        const h = histPorVei[v.vei_id]
+        if (!h) {
+          return {
+            ...veiculoVazio(v),
+            statusTxt: 'Sem dados nesse dia',
+          }
+        }
+        return {
+          placa: v.placa || '—',
+          motorista: h.motorista || v.motorista || 'Não vinculado',
+          frota: v.placa || String(v.vei_id),
+          veiID: v.vei_id, chassi: v.chassi, modelo: 'Cavalo',
+          status: h.status, statusTxt: h.status_txt, score: h.score,
+          vel: '—', velMax: h.vel_max, limiteVel: LIMITE_VEL,
+          excessoVelMin: h.excesso_vel_min, kmDesvio: 0,
+          ignicao: h.ignicao_final,
+          parado: formatarParado(h.parado_min), paradoMin: h.parado_min,
+          perdaHoje: Number(h.perda) || 0,
+          perdaSemana: Math.round((Number(h.perda) || 0) * 5),
+          km: `${h.km_rodado} km`,
+          posicao: h.posicao_final,
+          rota: h.posicao_final || '—',
+          alertaTipo: h.status === 'vermelho' ? 'critico' : h.status === 'amarelo' ? 'atencao' : null,
+          alertaTitulo: h.status !== 'verde'
+            ? `Marcha lenta — ${formatarParado(h.parado_min)}` : '',
+          alertaDesc: h.status === 'vermelho'
+            ? `Perda no dia: R$ ${Number(h.perda).toFixed(2)}` : '',
+          diario: [{ h: '—', cor: '#888', ev: 'Snapshot fechado do dia', det: dataConsulta }],
+        }
+      })
+
+      const perdaTotal = frota.reduce((s, v) => s + (v.perdaHoje || 0), 0)
+      const emRotaAgora = 0  // dia fechado, não tem "agora"
+
+      return res.status(200).json({
+        ok: true, modo: 'historico', data: dataConsulta,
+        atualizadoEm: new Date().toISOString(),
+        coleta: null,
+        resumo: {
+          totalVeiculos: frota.length,
+          emRotaAgora,
+          perdaTotalHoje: Math.round(perdaTotal * 100) / 100,
+          scoreMedio: frota.length
+            ? Math.round(frota.filter(v => v.score !== null).reduce((s, v) => s + v.score, 0)
+                / Math.max(1, frota.filter(v => v.score !== null).length)) : 0,
+        },
+        frota,
+      })
+    }
+
+    // === MODO TEMPO REAL: calcula em cima das mensagens do dia ===
     // Busca mensagens do dia (desde 00:00 hoje, fuso de Brasília)
     const hoje = new Date()
     hoje.setHours(0, 0, 0, 0)
@@ -175,7 +255,7 @@ export default async function handler(req, res) {
       return {
         placa: v.placa || '—',
         motorista: v.motorista || ultima.mot || 'Não vinculado',
-        frota: String(v.vei_id),
+        frota: v.placa || String(v.vei_id),
         veiID: v.vei_id,
         chassi: v.chassi,
         modelo: 'Cavalo',

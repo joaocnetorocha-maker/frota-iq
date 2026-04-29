@@ -5,6 +5,9 @@
     },
     "api/dados.js": {
       "maxDuration": 10
+    },
+    "api/fechar-dia.js": {
+      "maxDuration": 60
     }
   }
 }

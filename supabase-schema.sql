@@ -71,6 +71,30 @@ insert into coleta_estado (id, ultimo_mid_cb)
 values (1, 1)
 on conflict (id) do nothing;
 
+-- Tabela 4: HISTORICO_DIA
+-- Snapshot diário (1 linha por veículo por dia). Populada por /api/fechar-dia
+-- todo dia às 23:55 (Brasília). Permite olhar dias passados sem recalcular.
+create table if not exists historico_dia (
+  data            date    not null,           -- dia (YYYY-MM-DD, fuso Brasília)
+  vei_id          bigint  not null,
+  placa           text,
+  motorista       text,
+  parado_min      int     default 0,          -- marcha lenta total no dia
+  excesso_vel_min int     default 0,          -- minutos acima do limite
+  km_rodado       int     default 0,
+  vel_max         int     default 0,
+  perda           numeric(10, 2) default 0,   -- R$
+  score           int,
+  status          text,                       -- verde / amarelo / vermelho
+  status_txt      text,
+  ignicao_final   boolean default false,      -- estado da última msg do dia
+  posicao_final   text,                       -- mun/uf da última msg
+  fechado_em      timestamptz default now(),
+  primary key (data, vei_id)
+);
+
+create index if not exists idx_historico_data on historico_dia (data desc);
+
 -- =============================================================================
 -- Tudo pronto. Próximo passo: configurar env vars na Vercel e cron-job.org
 -- =============================================================================

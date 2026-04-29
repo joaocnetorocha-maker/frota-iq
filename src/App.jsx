@@ -4,6 +4,30 @@ import { getVeiculosReais, getResumoSemanaReais } from './dadosReais'
 
 const semana = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom']
 
+// "YYYY-MM-DD" em Brasília a partir de uma data UTC
+function dataBrasiliaISO(d = new Date()) {
+  const ms = d.getTime() + (-3) * 3600_000
+  const dt = new Date(ms)
+  const y = dt.getUTCFullYear()
+  const m = String(dt.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(dt.getUTCDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+// Lista de datas pra dropdown: hoje + 6 dias anteriores
+function opcoesData() {
+  const opts = [{ valor: '', label: 'Hoje (tempo real)' }]
+  const hoje = new Date()
+  for (let i = 1; i <= 6; i++) {
+    const d = new Date(hoje.getTime() - i * 24 * 3600_000)
+    const iso = dataBrasiliaISO(d)
+    const label = i === 1 ? 'Ontem'
+                : d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' })
+    opts.push({ valor: iso, label: `${label} · ${iso}` })
+  }
+  return opts
+}
+
 export default function App() {
   const [tela, setTela] = useState('painel')
   const [frotaFiltro, setFrotaFiltro] = useState('Todas')
@@ -22,6 +46,8 @@ export default function App() {
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState(null)
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null)
+  // dataConsulta: '' = hoje (tempo real, polling 30s), 'YYYY-MM-DD' = histórico estático
+  const [dataConsulta, setDataConsulta] = useState('')
 
   // Atualiza data/hora a cada minuto (independente do polling de dados)
   useEffect(() => {
@@ -29,14 +55,15 @@ export default function App() {
     return () => clearInterval(id)
   }, [])
 
-  // Polling de dados reais via /api/dados (a cada 30s)
+  // Carregamento de dados — polling 30s só pra "hoje"; dia passado carrega 1x
   useEffect(() => {
     let mounted = true
+    setCarregando(true)
+    setVeiculos([])
     async function carregar() {
       try {
-        const veis = await getVeiculosReais()
+        const veis = await getVeiculosReais(dataConsulta || undefined)
         if (!mounted) return
-        // /api/dados ainda não devolve `carreta` — colocamos placeholder pra UI não quebrar
         setVeiculos(veis.map(v => ({ ...v, carreta: v.carreta || '—' })))
         setUltimaAtualizacao(new Date())
         setErro(null)
@@ -48,19 +75,22 @@ export default function App() {
       }
     }
     carregar()
-    const id = setInterval(carregar, 30_000)
-    return () => { mounted = false; clearInterval(id) }
-  }, [])
+    if (!dataConsulta) {
+      const id = setInterval(carregar, 30_000)
+      return () => { mounted = false; clearInterval(id) }
+    }
+    return () => { mounted = false }
+  }, [dataConsulta])
 
-  // Resumo semanal — recalcula quando o filtro de frota muda ou chega novo update
+  // Resumo semanal — recalcula quando o filtro, data ou último update mudam
   useEffect(() => {
     if (carregando) return
     let mounted = true
-    getResumoSemanaReais(frotaFiltro)
+    getResumoSemanaReais(frotaFiltro, dataConsulta || undefined)
       .then(r => { if (mounted) setResumoSemana(r) })
       .catch(() => {})
     return () => { mounted = false }
-  }, [frotaFiltro, ultimaAtualizacao, carregando])
+  }, [frotaFiltro, ultimaAtualizacao, carregando, dataConsulta])
 
   const visiveis = veiculos.filter(v => frotaFiltro === 'Todas' || v.frota === frotaFiltro)
 
@@ -281,6 +311,10 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
         } else if (carregando) {
           bg = '#EEE'; bd = '#999'; cor = '#444'
           txt = 'CONECTANDO AO SERVIDOR...'
+        } else if (dataConsulta) {
+          // Modo histórico — fundo azul-acinzentado pra diferenciar
+          bg = '#EAF2FA'; bd = '#5B7FA8'; cor = '#1F3A5C'
+          txt = `HISTÓRICO · DIA ${dataConsulta} · ${veiculos.length} VEÍCULOS · DADOS FECHADOS`
         } else if (ultimaAtualizacao) {
           const seg = Math.round((agora - ultimaAtualizacao) / 1000)
           const quando = seg < 60 ? `há ${seg}s` : `há ${Math.round(seg / 60)} min`
@@ -323,7 +357,34 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
           flexWrap: 'wrap',
         }}>
           <span style={{ fontSize: 13, color: '#666', fontWeight: 500 }}>
-            Filtrar por frota:
+            Dia:
+          </span>
+          <select
+            value={dataConsulta}
+            onChange={(e) => setDataConsulta(e.target.value)}
+            style={{
+              padding: '8px 32px 8px 14px',
+              fontSize: 13,
+              fontWeight: 500,
+              color: dataConsulta ? '#1F3A5C' : '#1a1a1a',
+              background: dataConsulta ? '#EAF2FA' : '#fff',
+              border: `1px solid ${dataConsulta ? '#5B7FA8' : '#ddd'}`,
+              borderRadius: 8,
+              cursor: 'pointer',
+              appearance: 'none',
+              backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23666' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`,
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'right 12px center',
+              minWidth: 220,
+            }}
+          >
+            {opcoesData().map(o => (
+              <option key={o.valor} value={o.valor}>{o.label}</option>
+            ))}
+          </select>
+
+          <span style={{ fontSize: 13, color: '#666', fontWeight: 500 }}>
+            Filtrar por veículo:
           </span>
           <select
             value={frotaFiltro}
@@ -346,7 +407,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
           >
             {frotas.map(f => (
               <option key={f} value={f}>
-                {f === 'Todas' ? 'Todas as frotas' : `Frota ${f}`}
+                {f === 'Todas' ? 'Todos os veículos' : f}
               </option>
             ))}
           </select>
@@ -429,7 +490,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                   <div style={{flex:1, minWidth:0}}>
                     <div style={{fontSize:16, fontWeight:600}}>{p.motorista}</div>
                     <div style={{fontSize:12, color:'#666', marginTop:2}}>
-                      Veículo {p.placa} · Frota {p.frota}
+                      Placa {p.placa}
                     </div>
                   </div>
                   <div style={{textAlign:'right'}}>
@@ -555,7 +616,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
             <>
               <div className="detalhe-painel">
                 <div className="det-topo">
-                  <div><div className="det-titulo">{v.placa} · Carreta {v.carreta}</div><div className="det-sub">Motorista: {v.motorista} · Frota: {v.frota}</div></div>
+                  <div><div className="det-titulo">{v.placa}</div><div className="det-sub">Motorista: {v.motorista}</div></div>
                   <span className={`badge ${v.status}`}>{v.statusTxt}</span>
                 </div>
                 <div className="det-grid">
@@ -777,7 +838,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
             <div className="secao-titulo">
               {frotaFiltro === 'Todas'
                 ? 'Relatório por veículo — semana'
-                : `Relatório do veículo — Frota ${frotaFiltro}`}
+                : `Relatório do veículo — ${frotaFiltro}`}
             </div>
             {visiveis.length === 0 ? (
               <div className="vazio">Nenhum veículo corresponde ao filtro</div>
