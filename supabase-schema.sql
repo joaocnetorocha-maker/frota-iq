@@ -89,6 +89,7 @@ create table if not exists historico_dia (
   status_txt      text,
   ignicao_final   boolean default false,      -- estado da última msg do dia
   posicao_final   text,                       -- mun/uf da última msg
+  diario          jsonb,                      -- linha do tempo de eventos do dia
   fechado_em      timestamptz default now(),
   primary key (data, vei_id)
 );

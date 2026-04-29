@@ -123,6 +123,134 @@ function formatarParado(min) {
   return h > 0 ? `${h}h ${m}min` : `${m} min`
 }
 
+// =========================================================================
+// Diário do veículo: linha do tempo dos eventos significativos do dia
+// =========================================================================
+const MARCHA_LENTA_MIN = 10        // só registra paradas >= 10 min
+const MAX_EVENTOS_DIARIO = 25      // limita pra UI não poluir
+
+function fmtHora(dt) {
+  return new Date(dt).toLocaleTimeString('pt-BR', {
+    hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo',
+  })
+}
+
+function fmtLocal(m) {
+  return m && m.mun ? `${m.mun}/${m.uf}` : '—'
+}
+
+function montarDiario(msgs) {
+  if (!msgs || msgs.length === 0) {
+    return [{ h: '—', cor: '#888', ev: 'Sem mensagens nesse dia', det: '' }]
+  }
+  const ord = [...msgs].sort((a, b) => new Date(a.dt) - new Date(b.dt))
+  const eventos = []
+
+  let ignAnt = null
+  let munAnt = null
+  let excEm  = null   // { dt, velMax }
+  let parEm  = null   // { dt, mun, uf } - início de marcha lenta
+
+  // Primeira transmissão do dia
+  eventos.push({
+    h: fmtHora(ord[0].dt), cor: '#888',
+    ev: 'Primeira transmissão do dia',
+    det: fmtLocal(ord[0]),
+  })
+
+  for (let i = 0; i < ord.length; i++) {
+    const m = ord[i]
+
+    // Transições de ignição
+    if (ignAnt !== null && ignAnt !== m.evt4) {
+      if (m.evt4 === 1) {
+        eventos.push({ h: fmtHora(m.dt), cor: '#1D9E75', ev: 'Ignição ligada', det: fmtLocal(m) })
+      } else if (ignAnt === 1) {
+        eventos.push({ h: fmtHora(m.dt), cor: '#666', ev: 'Ignição desligada', det: fmtLocal(m) })
+      }
+    }
+    ignAnt = m.evt4
+
+    // Mudança de município
+    if (m.mun && munAnt && m.mun !== munAnt) {
+      eventos.push({
+        h: fmtHora(m.dt), cor: '#3D7BBE',
+        ev: `Chegou em ${m.mun}/${m.uf}`, det: '',
+      })
+    }
+    if (m.mun) munAnt = m.mun
+
+    // Excesso de velocidade (agrupa intervalos contínuos, mostra pico)
+    const emExc = m.evt34 || (m.vel && m.vel > LIMITE_VEL)
+    if (emExc) {
+      if (!excEm) excEm = { dt: m.dt, velMax: m.vel || LIMITE_VEL }
+      else if (m.vel && m.vel > excEm.velMax) excEm.velMax = m.vel
+    } else if (excEm) {
+      eventos.push({
+        h: fmtHora(excEm.dt), cor: '#E55B3C',
+        ev: 'Excesso de velocidade',
+        det: `Pico ${Math.round(excEm.velMax)} km/h`,
+      })
+      excEm = null
+    }
+
+    // Marcha lenta prolongada (só conta se >= 10 min)
+    const emPar = m.evt4 === 1 && (m.vel === null || m.vel < 1)
+    if (emPar) {
+      if (!parEm) parEm = { dt: m.dt, mun: m.mun, uf: m.uf }
+    } else if (parEm) {
+      const dur = (new Date(m.dt) - new Date(parEm.dt)) / 60000
+      if (dur >= MARCHA_LENTA_MIN) {
+        eventos.push({
+          h: fmtHora(parEm.dt), cor: '#D9A21B',
+          ev: `Parado ${Math.round(dur)} min em marcha lenta`,
+          det: parEm.mun ? `${parEm.mun}/${parEm.uf}` : '—',
+        })
+      }
+      parEm = null
+    }
+
+    // Frenagem / aceleração brusca
+    if (m.evt16) eventos.push({ h: fmtHora(m.dt), cor: '#E55B3C', ev: 'Frenagem brusca', det: fmtLocal(m) })
+    if (m.evt17) eventos.push({ h: fmtHora(m.dt), cor: '#E55B3C', ev: 'Aceleração brusca', det: fmtLocal(m) })
+  }
+
+  // Fecha eventos que ficaram em aberto no fim do dia
+  if (excEm) {
+    eventos.push({
+      h: fmtHora(excEm.dt), cor: '#E55B3C',
+      ev: 'Excesso de velocidade',
+      det: `Pico ${Math.round(excEm.velMax)} km/h`,
+    })
+  }
+  if (parEm) {
+    const ult = ord[ord.length - 1]
+    const dur = (new Date(ult.dt) - new Date(parEm.dt)) / 60000
+    if (dur >= MARCHA_LENTA_MIN) {
+      eventos.push({
+        h: fmtHora(parEm.dt), cor: '#D9A21B',
+        ev: `Parado ${Math.round(dur)} min em marcha lenta`,
+        det: parEm.mun ? `${parEm.mun}/${parEm.uf}` : '—',
+      })
+    }
+  }
+
+  // Posição mais recente (estado atual ou final do dia)
+  const ult = ord[ord.length - 1]
+  eventos.push({
+    h: fmtHora(ult.dt),
+    cor: ult.evt4 === 1 ? '#1D9E75' : '#666',
+    ev: ult.evt4 === 1 ? 'Última posição (em rota)' : 'Última posição (parado)',
+    det: `${fmtLocal(ult)} · ${Math.round(ult.vel || 0)} km/h`,
+  })
+
+  // Limita aos N mais recentes
+  if (eventos.length > MAX_EVENTOS_DIARIO) {
+    return eventos.slice(eventos.length - MAX_EVENTOS_DIARIO)
+  }
+  return eventos
+}
+
 // "YYYY-MM-DD" em Brasília
 function dataBrasilia(d = new Date()) {
   const ms = d.getTime() + (-3) * 3600_000
@@ -195,7 +323,9 @@ export default async function handler(req, res) {
             ? `Marcha lenta — ${formatarParado(h.parado_min)}` : '',
           alertaDesc: h.status === 'vermelho'
             ? `Perda no dia: R$ ${Number(h.perda).toFixed(2)}` : '',
-          diario: [{ h: '—', cor: '#888', ev: 'Snapshot fechado do dia', det: dataConsulta }],
+          diario: Array.isArray(h.diario) && h.diario.length > 0
+            ? h.diario
+            : [{ h: '—', cor: '#888', ev: 'Snapshot sem diário detalhado', det: dataConsulta }],
         }
       })
 
@@ -224,14 +354,24 @@ export default async function handler(req, res) {
     hoje.setHours(0, 0, 0, 0)
     const desde = hoje.toISOString()
 
-    const { data: msgs, error: errMsg } = await supabase
-      .from('mensagens_cb')
-      .select('vei_id, dt, lat, lon, mun, uf, vel, evt4, evt34, evt54, evt16, evt17, odm, mot')
-      .gte('dt', desde)
-      .order('dt', { ascending: false })
-      .limit(50000)
-
-    if (errMsg) throw new Error('Erro ao buscar mensagens: ' + errMsg.message)
+    // Pagina porque o Supabase free tier tem cap de 1000 linhas/query
+    let msgs = []
+    {
+      let from = 0
+      const PAGE = 1000
+      while (true) {
+        const { data: parte, error: errMsg } = await supabase
+          .from('mensagens_cb')
+          .select('vei_id, dt, lat, lon, mun, uf, vel, evt4, evt34, evt54, evt16, evt17, odm, mot')
+          .gte('dt', desde)
+          .order('dt', { ascending: true })
+          .range(from, from + PAGE - 1)
+        if (errMsg) throw new Error('Erro ao buscar mensagens: ' + errMsg.message)
+        msgs = msgs.concat(parte || [])
+        if (!parte || parte.length < PAGE) break
+        from += PAGE
+      }
+    }
 
     // Agrupa por veiID
     const msgsPorVei = {}
@@ -246,7 +386,8 @@ export default async function handler(req, res) {
       if (minhasMsgs.length === 0) return veiculoVazio(v)
 
       const ag = agregar(minhasMsgs)
-      const ultima = minhasMsgs[0]   // mais recente (já ordenado desc)
+      // Agora ordenamos asc, então a última msg é o índice final
+      const ultima = minhasMsgs[minhasMsgs.length - 1]
       const score = calcularScore(ag.paradoMin, ag.excessoVelMin)
       const { status, statusTxt } = statusDoScore(score)
 
@@ -285,14 +426,7 @@ export default async function handler(req, res) {
         alertaDesc: status === 'vermelho'
           ? `Perda estimada hoje: R$ ${perdaHoje.toFixed(2)}`
           : '',
-        diario: [
-          {
-            h: new Date(ultima.dt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-            cor: ultima.evt4 === 1 ? '#1D9E75' : '#888',
-            ev: ultima.evt4 === 1 ? 'Em rota' : 'Parado',
-            det: `${ultima.mun || '—'}/${ultima.uf || '—'} · ${Math.round(ultima.vel || 0)} km/h`,
-          }
-        ],
+        diario: montarDiario(minhasMsgs),
       }
     })
 
