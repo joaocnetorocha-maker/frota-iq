@@ -106,10 +106,10 @@ export default async function handler(req, res) {
       .from('veiculos').select('vei_id, placa, motorista')
     if (errVei) throw new Error('erro veiculos: ' + errVei.message)
 
-    // Busca mensagens do dia (paginando se necessário pra não estourar 50k)
+    // Busca mensagens do dia paginando (Supabase tem cap default de 1000/query)
     let todasMsgs = []
     let from = 0
-    const PAGE = 10000
+    const PAGE = 1000
     while (true) {
       const { data: msgs, error: errMsg } = await supabase
         .from('mensagens_cb')
