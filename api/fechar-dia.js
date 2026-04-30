@@ -80,9 +80,11 @@ function statusDoScore(score) {
 }
 
 // =========================================================================
-// Diário do veículo (linha do tempo do dia) — mesmo algoritmo do /api/dados
+// Diário do veículo — mesmo algoritmo do /api/dados (versão limpa)
+// Eventos: ignição liga/desliga · excesso vel · parada >= 10 min sem
+//          NENHUM movimento · frenagem · aceleração brusca
 // =========================================================================
-const MARCHA_LENTA_MIN = 10
+const PARADA_MIN_MIN = 10
 const MAX_EVENTOS_DIARIO = 25
 
 function fmtHora(dt) {
@@ -100,15 +102,14 @@ function montarDiario(msgs) {
   }
   const ord = [...msgs].sort((a, b) => new Date(a.dt) - new Date(b.dt))
   const eventos = []
-  let ignAnt = null, munAnt = null, excEm = null, parEm = null
-
-  eventos.push({
-    h: fmtHora(ord[0].dt), cor: '#888',
-    ev: 'Primeira transmissão do dia', det: fmtLocal(ord[0]),
-  })
+  let ignAnt = null
+  let excEm  = null   // { dt, velMax, mun, uf }
+  let parEm  = null   // { dtIni, dtFim, mun, uf, ign }
 
   for (let i = 0; i < ord.length; i++) {
     const m = ord[i]
+    const vel = Number(m.vel) || 0
+    const semMov = vel < 1   // PARADA REAL: filtra trânsito
 
     if (ignAnt !== null && ignAnt !== m.evt4) {
       if (m.evt4 === 1) eventos.push({ h: fmtHora(m.dt), cor: '#1D9E75', ev: 'Ignição ligada', det: fmtLocal(m) })
@@ -116,34 +117,30 @@ function montarDiario(msgs) {
     }
     ignAnt = m.evt4
 
-    if (m.mun && munAnt && m.mun !== munAnt) {
-      eventos.push({ h: fmtHora(m.dt), cor: '#3D7BBE', ev: `Chegou em ${m.mun}/${m.uf}`, det: '' })
-    }
-    if (m.mun) munAnt = m.mun
-
-    const emExc = m.evt34 || (m.vel && m.vel > LIMITE_VEL)
+    const emExc = m.evt34 || vel > LIMITE_VEL
     if (emExc) {
-      if (!excEm) excEm = { dt: m.dt, velMax: m.vel || LIMITE_VEL }
-      else if (m.vel && m.vel > excEm.velMax) excEm.velMax = m.vel
+      if (!excEm) excEm = { dt: m.dt, velMax: vel || LIMITE_VEL, mun: m.mun, uf: m.uf }
+      else if (vel > excEm.velMax) { excEm.velMax = vel; excEm.mun = m.mun; excEm.uf = m.uf }
     } else if (excEm) {
       eventos.push({
         h: fmtHora(excEm.dt), cor: '#E55B3C',
         ev: 'Excesso de velocidade',
-        det: `Pico ${Math.round(excEm.velMax)} km/h`,
+        det: `Pico ${Math.round(excEm.velMax)} km/h${excEm.mun ? ` · ${excEm.mun}/${excEm.uf}` : ''}`,
       })
       excEm = null
     }
 
-    const emPar = m.evt4 === 1 && (m.vel === null || m.vel < 1)
-    if (emPar) {
-      if (!parEm) parEm = { dt: m.dt, mun: m.mun, uf: m.uf }
+    if (semMov) {
+      if (!parEm) parEm = { dtIni: m.dt, dtFim: m.dt, mun: m.mun, uf: m.uf, ign: m.evt4 === 1 }
+      else parEm.dtFim = m.dt
     } else if (parEm) {
-      const dur = (new Date(m.dt) - new Date(parEm.dt)) / 60000
-      if (dur >= MARCHA_LENTA_MIN) {
+      const dur = (new Date(parEm.dtFim) - new Date(parEm.dtIni)) / 60000
+      if (dur >= PARADA_MIN_MIN) {
         eventos.push({
-          h: fmtHora(parEm.dt), cor: '#D9A21B',
-          ev: `Parado ${Math.round(dur)} min em marcha lenta`,
-          det: parEm.mun ? `${parEm.mun}/${parEm.uf}` : '—',
+          h: fmtHora(parEm.dtIni),
+          cor: parEm.ign ? '#D9A21B' : '#666',
+          ev: `Parado ${Math.round(dur)} min`,
+          det: `${parEm.ign ? 'motor ligado' : 'motor desligado'}${parEm.mun ? ` · ${parEm.mun}/${parEm.uf}` : ''}`,
         })
       }
       parEm = null
@@ -156,29 +153,25 @@ function montarDiario(msgs) {
   if (excEm) {
     eventos.push({
       h: fmtHora(excEm.dt), cor: '#E55B3C',
-      ev: 'Excesso de velocidade', det: `Pico ${Math.round(excEm.velMax)} km/h`,
+      ev: 'Excesso de velocidade',
+      det: `Pico ${Math.round(excEm.velMax)} km/h${excEm.mun ? ` · ${excEm.mun}/${excEm.uf}` : ''}`,
     })
   }
   if (parEm) {
-    const ult = ord[ord.length - 1]
-    const dur = (new Date(ult.dt) - new Date(parEm.dt)) / 60000
-    if (dur >= MARCHA_LENTA_MIN) {
+    const dur = (new Date(parEm.dtFim) - new Date(parEm.dtIni)) / 60000
+    if (dur >= PARADA_MIN_MIN) {
       eventos.push({
-        h: fmtHora(parEm.dt), cor: '#D9A21B',
-        ev: `Parado ${Math.round(dur)} min em marcha lenta`,
-        det: parEm.mun ? `${parEm.mun}/${parEm.uf}` : '—',
+        h: fmtHora(parEm.dtIni),
+        cor: parEm.ign ? '#D9A21B' : '#666',
+        ev: `Parado ${Math.round(dur)} min`,
+        det: `${parEm.ign ? 'motor ligado' : 'motor desligado'}${parEm.mun ? ` · ${parEm.mun}/${parEm.uf}` : ''}`,
       })
     }
   }
 
-  const ult = ord[ord.length - 1]
-  eventos.push({
-    h: fmtHora(ult.dt),
-    cor: ult.evt4 === 1 ? '#1D9E75' : '#666',
-    ev: ult.evt4 === 1 ? 'Última posição (em rota)' : 'Última posição (parado)',
-    det: `${fmtLocal(ult)} · ${Math.round(ult.vel || 0)} km/h`,
-  })
-
+  if (eventos.length === 0) {
+    return [{ h: '—', cor: '#888', ev: 'Sem ocorrências relevantes nesse dia', det: '' }]
+  }
   if (eventos.length > MAX_EVENTOS_DIARIO) return eventos.slice(eventos.length - MAX_EVENTOS_DIARIO)
   return eventos
 }

@@ -125,10 +125,13 @@ function formatarParado(min) {
 }
 
 // =========================================================================
-// Diário do veículo: linha do tempo dos eventos significativos do dia
+// Diário do veículo: só eventos que agregam impacto operacional.
+// Inclui:  ignição liga/desliga · excesso de vel · parada >= 10 min sem
+//          NENHUM movimento (vel<1 em TODAS as msgs) · frenagem · aceleração
+// Exclui: posição/cidade por cidade (não agrega), primeira/última msg, etc.
 // =========================================================================
-const MARCHA_LENTA_MIN = 10        // só registra paradas >= 10 min
-const MAX_EVENTOS_DIARIO = 25      // limita pra UI não poluir
+const PARADA_MIN_MIN = 10          // parada >= 10 min entra no diário
+const MAX_EVENTOS_DIARIO = 25      // limite pra UI não poluir
 
 function fmtHora(dt) {
   return new Date(dt).toLocaleTimeString('pt-BR', {
@@ -148,21 +151,15 @@ function montarDiario(msgs) {
   const eventos = []
 
   let ignAnt = null
-  let munAnt = null
-  let excEm  = null   // { dt, velMax }
-  let parEm  = null   // { dt, mun, uf } - início de marcha lenta
-
-  // Primeira transmissão do dia
-  eventos.push({
-    h: fmtHora(ord[0].dt), cor: '#888',
-    ev: 'Primeira transmissão do dia',
-    det: fmtLocal(ord[0]),
-  })
+  let excEm  = null   // { dt, velMax, mun, uf }
+  let parEm  = null   // { dtIni, dtFim, mun, uf, ign }
 
   for (let i = 0; i < ord.length; i++) {
     const m = ord[i]
+    const vel = Number(m.vel) || 0
+    const semMov = vel < 1   // PARADA REAL: vel < 1 (filtra trânsito)
 
-    // Transições de ignição
+    // --- Transições de ignição ---
     if (ignAnt !== null && ignAnt !== m.evt4) {
       if (m.evt4 === 1) {
         eventos.push({ h: fmtHora(m.dt), cor: '#1D9E75', ev: 'Ignição ligada', det: fmtLocal(m) })
@@ -172,80 +169,68 @@ function montarDiario(msgs) {
     }
     ignAnt = m.evt4
 
-    // Mudança de município
-    if (m.mun && munAnt && m.mun !== munAnt) {
-      eventos.push({
-        h: fmtHora(m.dt), cor: '#3D7BBE',
-        ev: `Chegou em ${m.mun}/${m.uf}`, det: '',
-      })
-    }
-    if (m.mun) munAnt = m.mun
-
-    // Excesso de velocidade (agrupa intervalos contínuos, mostra pico)
-    const emExc = m.evt34 || (m.vel && m.vel > LIMITE_VEL)
+    // --- Excesso de velocidade (agrupa contínuo, mostra pico) ---
+    const emExc = m.evt34 || vel > LIMITE_VEL
     if (emExc) {
-      if (!excEm) excEm = { dt: m.dt, velMax: m.vel || LIMITE_VEL }
-      else if (m.vel && m.vel > excEm.velMax) excEm.velMax = m.vel
+      if (!excEm) excEm = { dt: m.dt, velMax: vel || LIMITE_VEL, mun: m.mun, uf: m.uf }
+      else if (vel > excEm.velMax) { excEm.velMax = vel; excEm.mun = m.mun; excEm.uf = m.uf }
     } else if (excEm) {
       eventos.push({
         h: fmtHora(excEm.dt), cor: '#E55B3C',
         ev: 'Excesso de velocidade',
-        det: `Pico ${Math.round(excEm.velMax)} km/h`,
+        det: `Pico ${Math.round(excEm.velMax)} km/h${excEm.mun ? ` · ${excEm.mun}/${excEm.uf}` : ''}`,
       })
       excEm = null
     }
 
-    // Marcha lenta prolongada (só conta se >= 10 min)
-    const emPar = m.evt4 === 1 && (m.vel === null || m.vel < 1)
-    if (emPar) {
-      if (!parEm) parEm = { dt: m.dt, mun: m.mun, uf: m.uf }
+    // --- Parada >= 10 min sem NENHUM movimento ---
+    // Se o caminhão andou (vel >= 1) em qualquer msg do intervalo, reseta:
+    // não é parada, é trânsito.
+    if (semMov) {
+      if (!parEm) parEm = { dtIni: m.dt, dtFim: m.dt, mun: m.mun, uf: m.uf, ign: m.evt4 === 1 }
+      else parEm.dtFim = m.dt
     } else if (parEm) {
-      const dur = (new Date(m.dt) - new Date(parEm.dt)) / 60000
-      if (dur >= MARCHA_LENTA_MIN) {
+      const dur = (new Date(parEm.dtFim) - new Date(parEm.dtIni)) / 60000
+      if (dur >= PARADA_MIN_MIN) {
         eventos.push({
-          h: fmtHora(parEm.dt), cor: '#D9A21B',
-          ev: `Parado ${Math.round(dur)} min em marcha lenta`,
-          det: parEm.mun ? `${parEm.mun}/${parEm.uf}` : '—',
+          h: fmtHora(parEm.dtIni),
+          cor: parEm.ign ? '#D9A21B' : '#666',
+          ev: `Parado ${Math.round(dur)} min`,
+          det: `${parEm.ign ? 'motor ligado' : 'motor desligado'}${parEm.mun ? ` · ${parEm.mun}/${parEm.uf}` : ''}`,
         })
       }
       parEm = null
     }
 
-    // Frenagem / aceleração brusca
+    // --- Frenagem / aceleração brusca ---
     if (m.evt16) eventos.push({ h: fmtHora(m.dt), cor: '#E55B3C', ev: 'Frenagem brusca', det: fmtLocal(m) })
     if (m.evt17) eventos.push({ h: fmtHora(m.dt), cor: '#E55B3C', ev: 'Aceleração brusca', det: fmtLocal(m) })
   }
 
-  // Fecha eventos que ficaram em aberto no fim do dia
+  // Fecha eventos abertos no fim do dia
   if (excEm) {
     eventos.push({
       h: fmtHora(excEm.dt), cor: '#E55B3C',
       ev: 'Excesso de velocidade',
-      det: `Pico ${Math.round(excEm.velMax)} km/h`,
+      det: `Pico ${Math.round(excEm.velMax)} km/h${excEm.mun ? ` · ${excEm.mun}/${excEm.uf}` : ''}`,
     })
   }
   if (parEm) {
-    const ult = ord[ord.length - 1]
-    const dur = (new Date(ult.dt) - new Date(parEm.dt)) / 60000
-    if (dur >= MARCHA_LENTA_MIN) {
+    const dur = (new Date(parEm.dtFim) - new Date(parEm.dtIni)) / 60000
+    if (dur >= PARADA_MIN_MIN) {
       eventos.push({
-        h: fmtHora(parEm.dt), cor: '#D9A21B',
-        ev: `Parado ${Math.round(dur)} min em marcha lenta`,
-        det: parEm.mun ? `${parEm.mun}/${parEm.uf}` : '—',
+        h: fmtHora(parEm.dtIni),
+        cor: parEm.ign ? '#D9A21B' : '#666',
+        ev: `Parado ${Math.round(dur)} min`,
+        det: `${parEm.ign ? 'motor ligado' : 'motor desligado'}${parEm.mun ? ` · ${parEm.mun}/${parEm.uf}` : ''}`,
       })
     }
   }
 
-  // Posição mais recente (estado atual ou final do dia)
-  const ult = ord[ord.length - 1]
-  eventos.push({
-    h: fmtHora(ult.dt),
-    cor: ult.evt4 === 1 ? '#1D9E75' : '#666',
-    ev: ult.evt4 === 1 ? 'Última posição (em rota)' : 'Última posição (parado)',
-    det: `${fmtLocal(ult)} · ${Math.round(ult.vel || 0)} km/h`,
-  })
+  if (eventos.length === 0) {
+    return [{ h: '—', cor: '#888', ev: 'Sem ocorrências relevantes nesse dia', det: '' }]
+  }
 
-  // Limita aos N mais recentes
   if (eventos.length > MAX_EVENTOS_DIARIO) {
     return eventos.slice(eventos.length - MAX_EVENTOS_DIARIO)
   }
