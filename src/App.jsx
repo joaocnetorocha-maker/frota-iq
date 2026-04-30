@@ -764,7 +764,77 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                 <div className="mapa-placeholder">Mapa da rota · {v.rota}</div>
               </div>
 
-              <div className="secao-titulo" style={{marginBottom:'10px'}}>Diário do veículo — {v.placa} hoje</div>
+              {v.viagens && v.viagens.length > 0 && (
+                <>
+                  <div className="secao-titulo" style={{marginBottom:'10px'}}>
+                    Viagens do dia — {v.viagens.length}{' '}
+                    {v.viagens.length === 1 ? 'viagem' : 'viagens'}
+                    {' · '}
+                    {v.viagens.reduce((s, vg) => s + (vg.distanciaKm || 0), 0)} km
+                  </div>
+                  <div style={{display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24}}>
+                    {v.viagens.map((vg, i) => {
+                      const fmtDur = (m) => {
+                        const h = Math.floor(m / 60), mm = m % 60
+                        return h > 0 ? `${h}h ${mm}min` : `${mm} min`
+                      }
+                      const limpa = vg.excessos.length === 0 && vg.freadas === 0 && vg.aceleracoes === 0
+                      const corBorda = limpa ? '#1D9E75' : vg.excessos.length > 0 ? '#E55B3C' : '#D9A21B'
+                      return (
+                        <div key={i} style={{
+                          padding: '14px 16px',
+                          background: '#fff',
+                          border: `1px solid ${corBorda}33`,
+                          borderLeft: `4px solid ${corBorda}`,
+                          borderRadius: 8,
+                        }}>
+                          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6}}>
+                            <div style={{fontSize: 14, fontWeight: 600, color: '#222'}}>
+                              Viagem {i + 1} · {vg.inicio.hora} → {vg.fim.hora}
+                            </div>
+                            {vg.emAndamento && (
+                              <span style={{
+                                fontSize: 11, fontWeight: 600, padding: '3px 8px',
+                                background: '#1D9E7522', color: '#1D9E75', borderRadius: 12,
+                              }}>EM ANDAMENTO</span>
+                            )}
+                          </div>
+                          <div style={{fontSize: 13, color: '#333', marginBottom: 4}}>
+                            {vg.inicio.local} → {vg.fim.local}
+                          </div>
+                          <div style={{fontSize: 12, color: '#666', marginBottom: 8}}>
+                            {vg.distanciaKm} km · {fmtDur(vg.duracaoMin)} ·
+                            {' '}vel. média {vg.velMedia} km/h · pico {vg.velMax} km/h
+                          </div>
+                          <div style={{display: 'flex', flexWrap: 'wrap', gap: 8, fontSize: 12}}>
+                            {vg.excessos.length > 0 && (
+                              <span style={{color: '#E55B3C'}}>
+                                ⚠ {vg.excessos.length} excesso{vg.excessos.length > 1 ? 's' : ''} (pico {Math.max(...vg.excessos.map(e => e.velPico))} km/h)
+                              </span>
+                            )}
+                            {vg.paradas.length > 0 && (
+                              <span style={{color: '#D9A21B'}}>
+                                ⏸ {vg.paradas.length} parada{vg.paradas.length > 1 ? 's' : ''} ({vg.paradas.reduce((s, p) => s + p.duracaoMin, 0)} min)
+                              </span>
+                            )}
+                            {vg.freadas > 0 && (
+                              <span style={{color: '#E55B3C'}}>🔻 {vg.freadas} frenagem{vg.freadas > 1 ? 's' : ''}</span>
+                            )}
+                            {vg.aceleracoes > 0 && (
+                              <span style={{color: '#E55B3C'}}>🔺 {vg.aceleracoes} aceleração{vg.aceleracoes > 1 ? 'ões' : ''}</span>
+                            )}
+                            {limpa && (
+                              <span style={{color: '#1D9E75'}}>✓ Sem ocorrências</span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+
+              <div className="secao-titulo" style={{marginBottom:'10px'}}>Diário do veículo — {v.placa}</div>
               <div className="diario">
                 {v.diario.map((d, i) => (
                   <div key={i} className="diario-linha">

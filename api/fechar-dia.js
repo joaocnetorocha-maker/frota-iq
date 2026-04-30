@@ -183,6 +183,123 @@ function montarDiario(msgs) {
   return eventos
 }
 
+// =========================================================================
+// Detecção de VIAGENS — mesmo algoritmo do /api/dados
+// =========================================================================
+const RAIO_RETORNO_KM     = 1.0
+const PARADA_LONGA_MIN    = 240
+const DESTINO_ESTAVEL_MIN = 60
+const VIAGEM_MIN_KM       = 3
+const VIAGEM_MIN_DUR_MIN  = 5
+const PARADA_REGISTRO_MIN = 10
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  if (!lat1 || !lat2 || !lon1 || !lon2) return null
+  const toRad = x => (x * Math.PI) / 180
+  const R = 6371
+  const dLat = toRad(lat2 - lat1)
+  const dLon = toRad(lon2 - lon1)
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2
+  return 2 * R * Math.asin(Math.sqrt(a))
+}
+
+function novaViagemEstado(m) {
+  return {
+    inicioMsg: m, fimMsg: m,
+    velMax: m.vel || 0, velSoma: m.vel || 0, velContagem: m.vel ? 1 : 0,
+    excessoAberto: null, excessos: [],
+    paradaAberta: null, paradas: [],
+    freadas: 0, aceleracoes: 0,
+    emAndamento: false,
+  }
+}
+
+function resumirViagem(v) {
+  if (v.excessoAberto) { v.excessos.push(v.excessoAberto); v.excessoAberto = null }
+  const distKm = Math.max(0, (v.fimMsg.odm || 0) - (v.inicioMsg.odm || 0))
+  const durMin = Math.round((new Date(v.fimMsg.dt) - new Date(v.inicioMsg.dt)) / 60000)
+  return {
+    inicio: { hora: fmtHora(v.inicioMsg.dt), local: fmtLocal(v.inicioMsg), lat: v.inicioMsg.lat, lon: v.inicioMsg.lon },
+    fim: { hora: fmtHora(v.fimMsg.dt), local: fmtLocal(v.fimMsg), lat: v.fimMsg.lat, lon: v.fimMsg.lon },
+    distanciaKm: Math.round(distKm),
+    duracaoMin: durMin,
+    velMax: Math.round(v.velMax),
+    velMedia: v.velContagem > 0 ? Math.round(v.velSoma / v.velContagem) : 0,
+    excessos: v.excessos.map(e => ({ hora: fmtHora(e.dt), velPico: Math.round(e.velMax), local: e.mun ? `${e.mun}/${e.uf}` : '—' })),
+    paradas: v.paradas.map(p => ({ hora: fmtHora(p.dt), duracaoMin: p.duracaoMin, local: p.mun ? `${p.mun}/${p.uf}` : '—' })),
+    freadas: v.freadas, aceleracoes: v.aceleracoes,
+    emAndamento: !!v.emAndamento,
+  }
+}
+
+function detectarViagens(msgs) {
+  if (!msgs || msgs.length === 0) return []
+  const ord = [...msgs].sort((a, b) => new Date(a.dt) - new Date(b.dt))
+  const viagens = []
+  let v = null
+
+  const fechar = (razao) => {
+    if (!v) return
+    const r = resumirViagem(v)
+    if (r.distanciaKm >= VIAGEM_MIN_KM && r.duracaoMin >= VIAGEM_MIN_DUR_MIN) {
+      r.razaoFim = razao
+      viagens.push(r)
+    }
+    v = null
+  }
+
+  for (let i = 0; i < ord.length; i++) {
+    const m = ord[i]
+    const movendo = m.vel && m.vel >= 1
+
+    if (movendo) {
+      if (v && v.paradaAberta) {
+        const dur = (new Date(m.dt) - new Date(v.paradaAberta.dt)) / 60000
+        if (dur >= PARADA_REGISTRO_MIN) {
+          v.paradas.push({ dt: v.paradaAberta.dt, duracaoMin: Math.round(dur), mun: v.paradaAberta.mun, uf: v.paradaAberta.uf })
+        }
+        v.paradaAberta = null
+      }
+      if (!v) v = novaViagemEstado(m)
+      v.fimMsg = m
+      if (m.vel > v.velMax) v.velMax = m.vel
+      v.velSoma += m.vel; v.velContagem++
+    } else if (v) {
+      v.fimMsg = m
+      if (!v.paradaAberta) {
+        v.paradaAberta = { dt: m.dt, lat: m.lat, lon: m.lon, mun: m.mun, uf: m.uf, msgInicio: m }
+      }
+      const dur = (new Date(m.dt) - new Date(v.paradaAberta.dt)) / 60000
+      if (dur >= PARADA_LONGA_MIN) {
+        const distOdm = (m.odm || 0) - (v.inicioMsg.odm || 0)
+        const distInicio = haversineKm(m.lat, m.lon, v.inicioMsg.lat, v.inicioMsg.lon)
+        const voltouInicio = distInicio !== null && distInicio < RAIO_RETORNO_KM
+        const naoSaiuQuase = distOdm < VIAGEM_MIN_KM
+        const ficouNoDestino = dur >= DESTINO_ESTAVEL_MIN
+        if (voltouInicio || naoSaiuQuase || ficouNoDestino) {
+          v.fimMsg = v.paradaAberta.msgInicio
+          v.paradaAberta = null
+          fechar(voltouInicio ? 'voltou_origem' : naoSaiuQuase ? 'nao_saiu' : 'destino')
+        }
+      }
+    }
+
+    if (v) {
+      const emExc = m.evt34 || (m.vel && m.vel > LIMITE_VEL)
+      if (emExc) {
+        if (!v.excessoAberto) v.excessoAberto = { dt: m.dt, velMax: m.vel || LIMITE_VEL, mun: m.mun, uf: m.uf }
+        else if (m.vel && m.vel > v.excessoAberto.velMax) v.excessoAberto.velMax = m.vel
+      } else if (v.excessoAberto) {
+        v.excessos.push(v.excessoAberto); v.excessoAberto = null
+      }
+      if (m.evt16) v.freadas++
+      if (m.evt17) v.aceleracoes++
+    }
+  }
+  if (v) { v.emAndamento = true; fechar('em_andamento') }
+  return viagens
+}
+
 export default async function handler(req, res) {
   const auth = req.headers.authorization || ''
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -217,7 +334,7 @@ export default async function handler(req, res) {
     while (true) {
       const { data: msgs, error: errMsg } = await supabase
         .from('mensagens_cb')
-        .select('vei_id, dt, mun, uf, vel, evt4, evt34, evt16, evt17, evt54, odm')
+        .select('vei_id, dt, lat, lon, mun, uf, vel, evt4, evt34, evt16, evt17, evt54, odm')
         .gte('dt', inicio)
         .lt('dt', fim)
         .order('dt', { ascending: true })
@@ -249,6 +366,7 @@ export default async function handler(req, res) {
           perda: 0, score: null, status: 'verde', status_txt: 'Sem dados',
           ignicao_final: false, posicao_final: null,
           diario: [{ h: '—', cor: '#888', ev: 'Sem mensagens nesse dia', det: '' }],
+          viagens: [],
         }
       }
 
@@ -256,6 +374,7 @@ export default async function handler(req, res) {
       const { status, statusTxt } = statusDoScore(score)
       const perda = Math.round((ag.paradoMin / 60) * CONSUMO_PARADO * PRECO_DIESEL * 100) / 100
       const diario = montarDiario(minhasMsgs)
+      const viagens = detectarViagens(minhasMsgs)
 
       return {
         data: dataAlvo, vei_id: v.vei_id,
@@ -269,6 +388,7 @@ export default async function handler(req, res) {
         ignicao_final: ag.ultima.evt4 === 1,
         posicao_final: ag.ultima.mun ? `${ag.ultima.mun}/${ag.ultima.uf}` : null,
         diario,
+        viagens,
       }
     })
 
