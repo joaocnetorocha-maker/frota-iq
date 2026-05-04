@@ -834,13 +834,54 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                 </>
               )}
 
-              <div className="secao-titulo" style={{marginBottom:'10px'}}>Diário do veículo — {v.placa}</div>
-              <div className="diario">
+              {(() => {
+                const totalImpacto = v.diario.reduce((s, d) => s + (Number(d.custo) || 0), 0)
+                return (
+                  <div className="secao-titulo" style={{marginBottom:'10px'}}>
+                    Ocorrências do dia — {v.placa}
+                    {totalImpacto > 0 && (
+                      <span style={{marginLeft:8, fontSize:13, color:'#E55B3C', fontWeight:700}}>
+                        · prejuízo R$ {totalImpacto.toFixed(2).replace('.',',')}
+                      </span>
+                    )}
+                  </div>
+                )
+              })()}
+              <div style={{display:'flex', flexDirection:'column', gap:10, marginBottom:24}}>
                 {v.diario.map((d, i) => (
-                  <div key={i} className="diario-linha">
-                    <div className="d-hora">{d.h}</div>
-                    <div className="d-dot" style={{background: d.cor}}></div>
-                    <div><div className="d-evento">{d.ev}</div><div className="d-detalhe">{d.det}</div></div>
+                  <div key={i} style={{
+                    background:'#fff',
+                    border:`1px solid ${d.cor}33`,
+                    borderLeft:`4px solid ${d.cor}`,
+                    borderRadius:8,
+                    padding:'12px 14px',
+                  }}>
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12}}>
+                      <div style={{flex:1, minWidth:0}}>
+                        <div style={{fontSize:14, fontWeight:600, color:'#222', marginBottom:2}}>
+                          {d.ev}
+                        </div>
+                        {d.det && (
+                          <div style={{fontSize:12, color:'#666'}}>{d.det}</div>
+                        )}
+                      </div>
+                      {Number(d.custo) > 0 && (
+                        <div style={{
+                          fontSize:16, fontWeight:700, color:d.cor,
+                          whiteSpace:'nowrap',
+                        }}>
+                          R$ {Number(d.custo).toFixed(2).replace('.',',')}
+                        </div>
+                      )}
+                    </div>
+                    {d.local && d.local !== '—' && (
+                      <div style={{
+                        marginTop:6, fontSize:12, color:'#888',
+                        display:'flex', alignItems:'center', gap:4,
+                      }}>
+                        📍 {d.local}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

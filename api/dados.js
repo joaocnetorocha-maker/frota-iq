@@ -125,116 +125,121 @@ function formatarParado(min) {
 }
 
 // =========================================================================
-// Diário do veículo: só eventos que agregam impacto operacional.
-// Inclui:  ignição liga/desliga · excesso de vel · parada >= 10 min sem
-//          NENHUM movimento (vel<1 em TODAS as msgs) · frenagem · aceleração
-// Exclui: posição/cidade por cidade (não agrega), primeira/última msg, etc.
+// Diário de IMPACTO do veículo — cada linha é uma ocorrência consolidada
+// com custo estimado em R$. Formato pensado pra mensagem de WhatsApp pro
+// gestor (ex: "🟡 Marcha lenta · 2h 35min · R$ 58,86").
+// Categorias:
+//   1. Marcha lenta (consolidada) — combustível desperdiçado
+//   2. Excesso de velocidade (1 linha por evento) — combustível extra
+//   3. Frenagens bruscas (consolidadas) — desgaste de freios
+//   4. Acelerações bruscas (consolidadas) — combustível extra
+//   5. Parada longa motor desligado (contexto operacional, sem custo)
 // =========================================================================
-const PARADA_MIN_MIN = 10          // parada >= 10 min entra no diário
-const MAX_EVENTOS_DIARIO = 25      // limite pra UI não poluir
+const PARADA_MIN_MIN = 10
+const CUSTO_FRENAGEM     = 3.00     // R$/evento (pastilhas/discos)
+const CUSTO_ACELERACAO   = 1.50     // R$/evento (combustível extra)
+const CONSUMO_EXTRA_EXC  = 5.4      // L/h extra durante excesso (~15% acima)
 
 function fmtHora(dt) {
   return new Date(dt).toLocaleTimeString('pt-BR', {
     hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo',
   })
 }
-
 function fmtLocal(m) {
   return m && m.mun ? `${m.mun}/${m.uf}` : '—'
 }
+function fmtDur(min) {
+  const h = Math.floor(min / 60), mm = Math.round(min % 60)
+  return h > 0 ? `${h}h ${mm}min` : `${Math.round(min)} min`
+}
+function fmtBR(v) {
+  return `R$ ${(Math.round(v * 100) / 100).toFixed(2).replace('.', ',')}`
+}
 
-function montarDiario(msgs) {
+// montarDiario(msgs, paradoMinTotal)
+// Só ocorrências com IMPACTO FINANCEIRO DIRETO:
+//   1. Marcha lenta — combustível desperdiçado (motor ligado parado)
+//   2. Pico de velocidade — combustível extra (cada bloco contínuo)
+// Cada linha tem local da ocorrência (mostrado embaixo na UI).
+function montarDiario(msgs, paradoMinTotal = 0) {
   if (!msgs || msgs.length === 0) {
-    return [{ h: '—', cor: '#888', ev: 'Sem mensagens nesse dia', det: '' }]
+    return [{ h: '—', cor: '#888', ev: 'Sem mensagens nesse dia', det: '', local: '', custo: 0 }]
   }
   const ord = [...msgs].sort((a, b) => new Date(a.dt) - new Date(b.dt))
-  const eventos = []
+  const ocorr = []
 
-  let ignAnt = null
-  let excEm  = null   // { dt, velMax, mun, uf }
-  let parEm  = null   // { dtIni, dtFim, mun, uf, ign }
-
-  for (let i = 0; i < ord.length; i++) {
-    const m = ord[i]
-    const vel = Number(m.vel) || 0
-    const semMov = vel < 1   // PARADA REAL: vel < 1 (filtra trânsito)
-
-    // --- Transições de ignição ---
-    if (ignAnt !== null && ignAnt !== m.evt4) {
-      if (m.evt4 === 1) {
-        eventos.push({ h: fmtHora(m.dt), cor: '#1D9E75', ev: 'Ignição ligada', det: fmtLocal(m) })
-      } else if (ignAnt === 1) {
-        eventos.push({ h: fmtHora(m.dt), cor: '#666', ev: 'Ignição desligada', det: fmtLocal(m) })
-      }
-    }
-    ignAnt = m.evt4
-
-    // --- Excesso de velocidade (agrupa contínuo, mostra pico) ---
-    const emExc = m.evt34 || vel > LIMITE_VEL
-    if (emExc) {
-      if (!excEm) excEm = { dt: m.dt, velMax: vel || LIMITE_VEL, mun: m.mun, uf: m.uf }
-      else if (vel > excEm.velMax) { excEm.velMax = vel; excEm.mun = m.mun; excEm.uf = m.uf }
-    } else if (excEm) {
-      eventos.push({
-        h: fmtHora(excEm.dt), cor: '#E55B3C',
-        ev: 'Excesso de velocidade',
-        det: `Pico ${Math.round(excEm.velMax)} km/h${excEm.mun ? ` · ${excEm.mun}/${excEm.uf}` : ''}`,
-      })
-      excEm = null
-    }
-
-    // --- Parada >= 10 min sem NENHUM movimento ---
-    // Se o caminhão andou (vel >= 1) em qualquer msg do intervalo, reseta:
-    // não é parada, é trânsito.
-    if (semMov) {
-      if (!parEm) parEm = { dtIni: m.dt, dtFim: m.dt, mun: m.mun, uf: m.uf, ign: m.evt4 === 1 }
-      else parEm.dtFim = m.dt
-    } else if (parEm) {
-      const dur = (new Date(parEm.dtFim) - new Date(parEm.dtIni)) / 60000
-      if (dur >= PARADA_MIN_MIN) {
-        eventos.push({
-          h: fmtHora(parEm.dtIni),
-          cor: parEm.ign ? '#D9A21B' : '#666',
-          ev: `Parado ${Math.round(dur)} min`,
-          det: `${parEm.ign ? 'motor ligado' : 'motor desligado'}${parEm.mun ? ` · ${parEm.mun}/${parEm.uf}` : ''}`,
-        })
-      }
-      parEm = null
-    }
-
-    // --- Frenagem / aceleração brusca ---
-    if (m.evt16) eventos.push({ h: fmtHora(m.dt), cor: '#E55B3C', ev: 'Frenagem brusca', det: fmtLocal(m) })
-    if (m.evt17) eventos.push({ h: fmtHora(m.dt), cor: '#E55B3C', ev: 'Aceleração brusca', det: fmtLocal(m) })
-  }
-
-  // Fecha eventos abertos no fim do dia
-  if (excEm) {
-    eventos.push({
-      h: fmtHora(excEm.dt), cor: '#E55B3C',
-      ev: 'Excesso de velocidade',
-      det: `Pico ${Math.round(excEm.velMax)} km/h${excEm.mun ? ` · ${excEm.mun}/${excEm.uf}` : ''}`,
+  // 1. MARCHA LENTA — consolidada, com local do maior bloco
+  if (paradoMinTotal >= 5) {
+    const custo = (paradoMinTotal / 60) * CONSUMO_PARADO * PRECO_DIESEL
+    const localMaior = encontrarMaiorBlocoMarchaLenta(ord)
+    ocorr.push({
+      h: fmtDur(paradoMinTotal),
+      cor: '#D9A21B',
+      ev: 'Caminhão parado com motor ligado',
+      det: `${fmtDur(paradoMinTotal)} de marcha lenta no dia · combustível desperdiçado`,
+      local: localMaior || '—',
+      custo: Math.round(custo * 100) / 100,
     })
   }
-  if (parEm) {
-    const dur = (new Date(parEm.dtFim) - new Date(parEm.dtIni)) / 60000
-    if (dur >= PARADA_MIN_MIN) {
-      eventos.push({
-        h: fmtHora(parEm.dtIni),
-        cor: parEm.ign ? '#D9A21B' : '#666',
-        ev: `Parado ${Math.round(dur)} min`,
-        det: `${parEm.ign ? 'motor ligado' : 'motor desligado'}${parEm.mun ? ` · ${parEm.mun}/${parEm.uf}` : ''}`,
-      })
+
+  // 2. PICOS DE VELOCIDADE (cada janela contínua = 1 linha)
+  let excEm = null
+  for (const m of ord) {
+    const vel = Number(m.vel) || 0
+    const emExc = m.evt34 || vel > LIMITE_VEL
+    if (emExc) {
+      if (!excEm) excEm = { dtIni: m.dt, dtFim: m.dt, velMax: vel || LIMITE_VEL, mun: m.mun, uf: m.uf }
+      else {
+        excEm.dtFim = m.dt
+        if (vel > excEm.velMax) { excEm.velMax = vel; excEm.mun = m.mun; excEm.uf = m.uf }
+      }
+    } else if (excEm) { pushExcesso(ocorr, excEm); excEm = null }
+  }
+  if (excEm) pushExcesso(ocorr, excEm)
+
+  // Ordena por custo desc (maior impacto primeiro)
+  ocorr.sort((a, b) => (b.custo || 0) - (a.custo || 0))
+
+  if (ocorr.length === 0) {
+    return [{ h: '✓', cor: '#1D9E75', ev: 'Sem ocorrências de impacto nesse dia', det: '', local: '', custo: 0 }]
+  }
+  return ocorr
+}
+
+function pushExcesso(arr, ex) {
+  const durMin = Math.max(1, Math.round((new Date(ex.dtFim) - new Date(ex.dtIni)) / 60000))
+  const custo = (CONSUMO_EXTRA_EXC / 60) * durMin * PRECO_DIESEL
+  arr.push({
+    h: fmtDur(durMin),
+    cor: '#E55B3C',
+    ev: `Pico de velocidade — ${Math.round(ex.velMax)} km/h`,
+    det: `${durMin} min acima do limite de ${LIMITE_VEL} km/h · combustível extra`,
+    local: ex.mun ? `${ex.mun}/${ex.uf}` : '—',
+    custo: Math.round(custo * 100) / 100,
+  })
+}
+
+// Encontra o maior bloco contínuo de marcha lenta (vel<1 + motor ligado)
+// e devolve o local desse bloco, pra mostrar no card "marcha lenta total".
+function encontrarMaiorBlocoMarchaLenta(ord) {
+  let melhor = null
+  let atual = null
+  for (const m of ord) {
+    const vel = Number(m.vel) || 0
+    if (m.evt4 === 1 && vel < 1) {
+      if (!atual) atual = { dtIni: m.dt, dtFim: m.dt, mun: m.mun, uf: m.uf }
+      else atual.dtFim = m.dt
+    } else if (atual) {
+      const dur = (new Date(atual.dtFim) - new Date(atual.dtIni)) / 60000
+      if (!melhor || dur > melhor.dur) melhor = { dur, mun: atual.mun, uf: atual.uf }
+      atual = null
     }
   }
-
-  if (eventos.length === 0) {
-    return [{ h: '—', cor: '#888', ev: 'Sem ocorrências relevantes nesse dia', det: '' }]
+  if (atual) {
+    const dur = (new Date(atual.dtFim) - new Date(atual.dtIni)) / 60000
+    if (!melhor || dur > melhor.dur) melhor = { dur, mun: atual.mun, uf: atual.uf }
   }
-
-  if (eventos.length > MAX_EVENTOS_DIARIO) {
-    return eventos.slice(eventos.length - MAX_EVENTOS_DIARIO)
-  }
-  return eventos
+  return melhor && melhor.mun ? `${melhor.mun}/${melhor.uf}` : null
 }
 
 // =========================================================================
@@ -567,7 +572,7 @@ export default async function handler(req, res) {
         alertaDesc: status === 'vermelho'
           ? `Perda estimada hoje: R$ ${perdaHoje.toFixed(2)}`
           : '',
-        diario: montarDiario(minhasMsgs),
+        diario: montarDiario(minhasMsgs, ag.paradoMin),
         viagens: detectarViagens(minhasMsgs),
       }
     })
