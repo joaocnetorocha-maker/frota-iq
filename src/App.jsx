@@ -847,41 +847,15 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                   </div>
                 )
               })()}
-              <div style={{display:'flex', flexDirection:'column', gap:10, marginBottom:24}}>
+              <div className="diario">
                 {v.diario.map((d, i) => (
-                  <div key={i} style={{
-                    background:'#fff',
-                    border:`1px solid ${d.cor}33`,
-                    borderLeft:`4px solid ${d.cor}`,
-                    borderRadius:8,
-                    padding:'12px 14px',
-                  }}>
-                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12}}>
-                      <div style={{flex:1, minWidth:0}}>
-                        <div style={{fontSize:14, fontWeight:600, color:'#222', marginBottom:2}}>
-                          {d.ev}
-                        </div>
-                        {d.det && (
-                          <div style={{fontSize:12, color:'#666'}}>{d.det}</div>
-                        )}
-                      </div>
-                      {Number(d.custo) > 0 && (
-                        <div style={{
-                          fontSize:16, fontWeight:700, color:d.cor,
-                          whiteSpace:'nowrap',
-                        }}>
-                          R$ {Number(d.custo).toFixed(2).replace('.',',')}
-                        </div>
-                      )}
+                  <div key={i} className="diario-linha">
+                    <div className="d-hora">{d.h}</div>
+                    <div className="d-dot" style={{background: d.cor}}></div>
+                    <div>
+                      <div className="d-evento">{d.ev}</div>
+                      <div className="d-detalhe">{d.det}</div>
                     </div>
-                    {d.local && d.local !== '—' && (
-                      <div style={{
-                        marginTop:6, fontSize:12, color:'#888',
-                        display:'flex', alignItems:'center', gap:4,
-                      }}>
-                        📍 {d.local}
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
@@ -890,65 +864,84 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
         </>
       )}
 
-      {tela === 'relatorio' && (
+      {tela === 'relatorio' && (() => {
+        const modoDia = !!(resumoSemana && resumoSemana.modoDia)
+        const dataLabel = (() => {
+          if (!dataConsulta) return ''
+          const [, mm, dd] = dataConsulta.split('-')
+          return `${dd}/${mm}`
+        })()
+        const tituloResumo = modoDia
+          ? (dataConsulta
+              ? (frotaFiltro === 'Todas'
+                  ? `Resumo da frota — ${dataLabel}`
+                  : `Resumo do veículo ${frotaFiltro} — ${dataLabel}`)
+              : `Resumo do veículo ${frotaFiltro} — hoje`)
+          : 'Resumo semanal da frota'
+        const subPeriodo = modoDia ? (dataConsulta ? `em ${dataLabel}` : 'hoje') : 'esta semana'
+        const tituloPerda = modoDia ? 'Perda no dia' : 'Perda total semana'
+        const subMedia = modoDia ? subPeriodo : 'por semana'
+        return (
         <>
-          <div className="secao-titulo" style={{marginBottom:'1rem'}}>Resumo semanal da frota</div>
+          <div className="secao-titulo" style={{marginBottom:'1rem'}}>{tituloResumo}</div>
           <div className="resumo-grid" style={{marginBottom:'1.5rem'}}>
             <div className="metrica">
               <div className="metrica-label">Total de viagens</div>
               <div className="metrica-valor">{resumoSemana ? resumoSemana.totalViagens : '—'}</div>
-              <div className="metrica-sub">{resumoSemana ? 'esta semana' : 'aguardando ONIXSAT'}</div>
+              <div className="metrica-sub">{resumoSemana ? subPeriodo : 'aguardando ONIXSAT'}</div>
             </div>
             <div className="metrica">
               <div className="metrica-label">KM total rodado</div>
               <div className="metrica-valor">{resumoSemana ? `${resumoSemana.kmTotalSemana.toLocaleString('pt-BR')} km` : '—'}</div>
-              <div className="metrica-sub">{resumoSemana ? 'esta semana' : 'aguardando ONIXSAT'}</div>
+              <div className="metrica-sub">{resumoSemana ? subPeriodo : 'aguardando ONIXSAT'}</div>
             </div>
             <div className="metrica">
-              <div className="metrica-label">Perda total semana</div>
+              <div className="metrica-label">{tituloPerda}</div>
               <div className="metrica-valor alerta">R$ {resumoSemana ? resumoSemana.perdaSemana.toLocaleString('pt-BR') : '0'}</div>
               <div className="metrica-sub">em marcha lenta</div>
             </div>
             <div className="metrica">
               <div className="metrica-label">Média por veículo</div>
               <div className="metrica-valor alerta">R$ {resumoSemana ? resumoSemana.mediaPorVeiculo.toLocaleString('pt-BR') : '0'}</div>
-              <div className="metrica-sub">por semana</div>
+              <div className="metrica-sub">{subMedia}</div>
             </div>
           </div>
 
-          <div className="card-box" style={{marginBottom:'1.5rem'}}>
-            <div className="secao-titulo">Desempenho por dia — esta semana</div>
-            <div className="grafico-semana">
-              {(resumoSemana ? resumoSemana.dias : semana.map(d => ({dia: d, valor: 0}))).map((d, i) => {
-                const max = resumoSemana ? Math.max(...resumoSemana.dias.map(x => x.valor), 1) : 1
-                const altura = resumoSemana ? Math.max(4, Math.round((d.valor / max) * 100)) : 4
-                const isHoje = i === ((new Date().getDay() + 6) % 7) // converte Dom=0 → Seg=0
-                return (
-                  <div key={d.dia} className="grafico-col">
-                    <div className="grafico-barra-wrap" style={{height: 110, display: 'flex', alignItems: 'flex-end', justifyContent: 'center'}}>
-                      <div
-                        className="grafico-barra"
-                        style={{
-                          height: `${altura}px`,
-                          width: '70%',
-                          background: d.valor === 0 ? '#f0f0f0' : (isHoje ? '#1D9E75' : '#D85A30'),
-                          borderRadius: '4px 4px 0 0',
-                          transition: 'height .3s ease',
-                        }}
-                      ></div>
+          {!modoDia && (
+            <div className="card-box" style={{marginBottom:'1.5rem'}}>
+              <div className="secao-titulo">Desempenho por dia — esta semana</div>
+              <div className="grafico-semana">
+                {(resumoSemana ? resumoSemana.dias : semana.map(d => ({dia: d, valor: 0}))).map((d, i) => {
+                  const max = resumoSemana ? Math.max(...resumoSemana.dias.map(x => x.valor), 1) : 1
+                  const altura = resumoSemana ? Math.max(4, Math.round((d.valor / max) * 100)) : 4
+                  const isHoje = i === ((new Date().getDay() + 6) % 7) // converte Dom=0 → Seg=0
+                  return (
+                    <div key={d.dia} className="grafico-col">
+                      <div className="grafico-barra-wrap" style={{height: 110, display: 'flex', alignItems: 'flex-end', justifyContent: 'center'}}>
+                        <div
+                          className="grafico-barra"
+                          style={{
+                            height: `${altura}px`,
+                            width: '70%',
+                            background: d.valor === 0 ? '#f0f0f0' : (isHoje ? '#1D9E75' : '#D85A30'),
+                            borderRadius: '4px 4px 0 0',
+                            transition: 'height .3s ease',
+                          }}
+                        ></div>
+                      </div>
+                      <div className="grafico-label" style={{fontWeight: isHoje ? 600 : 400}}>{d.dia}</div>
+                      <div className="grafico-valor">R$ {d.valor.toLocaleString('pt-BR')}</div>
                     </div>
-                    <div className="grafico-label" style={{fontWeight: isHoje ? 600 : 400}}>{d.dia}</div>
-                    <div className="grafico-valor">R$ {d.valor.toLocaleString('pt-BR')}</div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="card-box">
             <div className="secao-titulo">
               {frotaFiltro === 'Todas'
-                ? 'Relatório por veículo — semana'
+                ? `Relatório por veículo — ${modoDia ? subPeriodo : 'semana'}`
                 : `Relatório do veículo — ${frotaFiltro}`}
             </div>
             {visiveis.length === 0 ? (
@@ -983,7 +976,8 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
             )}
           </div>
         </>
-      )}
+        )
+      })()}
 
       {tela === 'config' && (
         <>
