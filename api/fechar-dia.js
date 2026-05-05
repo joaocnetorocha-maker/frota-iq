@@ -14,10 +14,170 @@
 
 import { createClient } from '@supabase/supabase-js'
 
-const LIMITE_VEL = 90      // km/h
-const PRECO_DIESEL = 6.50  // R$/L
-const CONSUMO_PARADO = 3.5 // L/h em marcha lenta
-const TZ_OFFSET_HOURS = -3 // Brasília
+// =============================================================================
+// CONSTANTES — calibração de toda a pipeline anti-falso-positivo
+// MANTER ESTE BLOCO IDÊNTICO AO DE /api/dados.js
+// =============================================================================
+const LIMITE_VEL     = 90     // km/h
+const PRECO_DIESEL   = 6.50   // R$/L
+const CONSUMO_PARADO = 3.5    // L/h em marcha lenta
+const TZ_OFFSET_HOURS = -3    // Brasília
+
+// === Sanity bounds ===
+const LAT_MIN = -34, LAT_MAX = 6
+const LON_MIN = -74, LON_MAX = -28
+const VEL_MAX_FISICA    = 200    // descarta totalmente
+const VEL_MAX_PLAUSIVEL = 140    // 140-200: marca como suspeita (não penaliza)
+const ODM_MAX_VALIDO = 9_999_999
+const KM_MAX_DIA     = 1500
+const DEDUP_INTERVALO_MS = 1
+
+// === Marcha lenta (3 testes simultâneos) ===
+const ML_DURACAO_MIN  = 5    // min
+const ML_RAIO_M       = 50   // m
+const ML_DELTA_ODM_KM = 0.1  // km
+
+// === Excesso de velocidade — REGRA CONSERVADORA (AND, não OR) ===
+// (≥2 amostras consecutivas) E (≥30s de duração CERTA), OU evt34 da ONIXSAT
+const EXC_MIN_AMOSTRAS  = 2
+const EXC_DURACAO_MIN_S = 30
+
+// === Detecção de viagem ===
+const VIAGEM_MIN_KM        = 5
+const VIAGEM_MIN_DUR_MIN   = 15
+const RAIO_RETORNO_KM      = 1.0
+const PARADA_LONGA_MIN     = 240
+const DESTINO_ESTAVEL_MIN  = 60
+const PARADA_REGISTRO_MIN  = 10
+
+// =============================================================================
+// HELPERS GEOMÉTRICOS / SANITIZAÇÃO
+// =============================================================================
+function distanciaM(lat1, lon1, lat2, lon2) {
+  if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return 0
+  const R = 6371000
+  const toRad = (g) => (g * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLon = toRad(lon2 - lon1)
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(a))
+}
+
+function gpsValido(lat, lon) {
+  if (lat == null || lon == null) return false
+  if (lat === 0 && lon === 0) return false
+  if (lat < LAT_MIN || lat > LAT_MAX) return false
+  if (lon < LON_MIN || lon > LON_MAX) return false
+  return true
+}
+
+// Sanitiza msgs ANTES de qualquer agregação:
+//  - GPS inválido (null, 0/0, fora do Brasil) → lat/lon = null
+//  - Velocidades absurdas (negativo, > 200) → null
+//  - Odômetros absurdos (≤0, > 9.999.999) → null
+//  - Dedup: msgs com mesmo timestamp (retry) consolidadas
+function sanitizarMensagens(msgs) {
+  if (!msgs || msgs.length === 0) return []
+  const ord = [...msgs].sort((a, b) => new Date(a.dt) - new Date(b.dt))
+  const out = []
+  let ultimoMs = -1
+  for (const m of ord) {
+    const tMs = new Date(m.dt).getTime()
+    if (tMs - ultimoMs < DEDUP_INTERVALO_MS) continue
+    const sane = { ...m, velSuspeita: false }
+    if (!gpsValido(sane.lat, sane.lon)) { sane.lat = null; sane.lon = null }
+    if (sane.vel == null || sane.vel < 0 || sane.vel > VEL_MAX_FISICA) sane.vel = null
+    else if (sane.vel > VEL_MAX_PLAUSIVEL) sane.velSuspeita = true   // 140-200: implausível
+    if (sane.odm == null || sane.odm <= 0 || sane.odm > ODM_MAX_VALIDO) sane.odm = null
+    out.push(sane)
+    ultimoMs = tMs
+  }
+  return out
+}
+
+// Blocos contínuos de excesso de velocidade.
+// Bloco "válido" se: ≥2 amostras consecutivas, OU ≥30s, OU evt34 confirmado.
+function blocosExcesso(msgsOrd) {
+  const blocos = []
+  let bloco = null
+  const fechar = (proxIdx) => {
+    if (!bloco) return
+    const ini = bloco.msgs[0]
+    const fim = bloco.msgs[bloco.msgs.length - 1]
+    const proxima = msgsOrd[proxIdx]
+    // duracaoCertaS: tempo CONHECIDO acima do limite (só msg[0]→msg[N-1])
+    bloco.duracaoCertaS = (new Date(fim.dt) - new Date(ini.dt)) / 1000
+    const fimEfetivo = proxima ? new Date(proxima.dt) : new Date(new Date(fim.dt).getTime() + 60_000)
+    bloco.duracaoS = (fimEfetivo - new Date(ini.dt)) / 1000
+    bloco.duracaoMin = bloco.duracaoS / 60
+    bloco.qtdMsgs = bloco.msgs.length
+    bloco.temEvt34 = bloco.msgs.some(m => m.evt34)
+    bloco.velMax = bloco.msgs.reduce((mx, m) => Math.max(mx, m.vel ?? 0), 0)
+    const msgPico = bloco.msgs.reduce((p, m) => ((m.vel ?? 0) > (p?.vel ?? 0) ? m : p), bloco.msgs[0])
+    bloco.mun = msgPico.mun
+    bloco.uf = msgPico.uf
+    bloco.dtPico = msgPico.dt
+    // Validação CONSERVADORA (AND, não OR):
+    // ≥2 amostras consecutivas E ≥30s de duração certa, OU evt34 confirmado
+    bloco.valido =
+      (bloco.qtdMsgs >= EXC_MIN_AMOSTRAS && bloco.duracaoCertaS >= EXC_DURACAO_MIN_S) ||
+      bloco.temEvt34
+    blocos.push(bloco)
+    bloco = null
+  }
+  for (let i = 0; i < msgsOrd.length; i++) {
+    const m = msgsOrd[i]
+    // Suspeitas (vel > 140) NÃO entram em bloco — só evt34 valida nesses casos
+    const velAcima = m.vel != null && m.vel > LIMITE_VEL && !m.velSuspeita
+    const acima = velAcima || m.evt34 === 1
+    if (acima) {
+      if (!bloco) bloco = { msgs: [] }
+      bloco.msgs.push(m)
+    } else if (bloco) {
+      fechar(i)
+    }
+  }
+  if (bloco) fechar(msgsOrd.length)
+  return blocos
+}
+
+function blocosMarchaLenta(msgsOrd) {
+  const blocos = []
+  let bloco = null
+  const fechar = (proxIdx) => {
+    if (!bloco) return
+    const ini = bloco.msgs[0]
+    const fim = bloco.msgs[bloco.msgs.length - 1]
+    const proxima = msgsOrd[proxIdx]
+    const fimEfetivo = proxima ? new Date(proxima.dt) : new Date(new Date(fim.dt).getTime() + 60_000)
+    const duracaoMin = (fimEfetivo - new Date(ini.dt)) / 60000
+    const deslocM = distanciaM(ini.lat, ini.lon, fim.lat, fim.lon)
+    const dOdm = (fim.odm && ini.odm) ? Math.max(0, fim.odm - ini.odm) : 0
+    bloco.duracaoMin = duracaoMin
+    bloco.deslocM = deslocM
+    bloco.dOdm = dOdm
+    bloco.valido =
+      duracaoMin >= ML_DURACAO_MIN &&
+      deslocM <= ML_RAIO_M &&
+      dOdm <= ML_DELTA_ODM_KM
+    blocos.push(bloco)
+    bloco = null
+  }
+  for (let i = 0; i < msgsOrd.length; i++) {
+    const m = msgsOrd[i]
+    const parado = m.evt4 === 1 && (m.vel === null || m.vel < 1)
+    if (parado) {
+      if (!bloco) bloco = { msgs: [] }
+      bloco.msgs.push(m)
+    } else if (bloco) {
+      fechar(i)
+    }
+  }
+  if (bloco) fechar(msgsOrd.length)
+  return blocos
+}
 
 // "YYYY-MM-DD" em Brasília a partir de uma data UTC
 function dataBrasilia(d = new Date()) {
@@ -38,34 +198,111 @@ function intervaloDoDia(dataStr) {
   return { inicio: inicio.toISOString(), fim: fim.toISOString() }
 }
 
+// agregar() — sanitiza, deriva blocos confirmados e retorna métricas confiáveis.
+// Pipeline anti-falso-positivo idêntica à de /api/dados.js (manter sincronizado).
 function agregar(msgs) {
-  if (msgs.length === 0) return null
-  const ordenado = [...msgs].sort((a, b) => new Date(a.dt) - new Date(b.dt))
+  if (!msgs || msgs.length === 0) return null
 
-  let paradoMin = 0, excessoVelMin = 0, velMax = 0
+  const ordenado = sanitizarMensagens(msgs)
+  if (ordenado.length === 0) return null
+
   let odmMin = Infinity, odmMax = -Infinity
+  let frenagensBruscas = 0, aceleracoesBruscas = 0
+
+  // === Métricas LEGACY pra modo paralelo (gravadas no snapshot) ===
+  let excessoVelMinLegacy = 0
+  let velMaxLegacy = 0
+  let paradoMinLegacy = 0
+  let blocoParadoLegacy = null
 
   for (let i = 0; i < ordenado.length; i++) {
     const m = ordenado[i]
+    if (m.odm != null && m.odm < odmMin) odmMin = m.odm
+    if (m.odm != null && m.odm > odmMax) odmMax = m.odm
+    if (m.evt16) frenagensBruscas++
+    if (m.evt17) aceleracoesBruscas++
+
     const proxima = ordenado[i + 1]
     const deltaMin = proxima
       ? Math.min(5, Math.max(0, (new Date(proxima.dt) - new Date(m.dt)) / 60000))
       : 1
+    if (m.evt34 || (m.vel != null && m.vel > LIMITE_VEL)) excessoVelMinLegacy += deltaMin
+    if (m.vel != null && m.vel > velMaxLegacy) velMaxLegacy = m.vel
+    const paradoLeg = m.evt4 === 1 && (m.vel === null || m.vel < 1)
+    if (paradoLeg) {
+      if (!blocoParadoLegacy) blocoParadoLegacy = { ini: m.dt }
+    } else if (blocoParadoLegacy) {
+      paradoMinLegacy += (new Date(m.dt) - new Date(blocoParadoLegacy.ini)) / 60000
+      blocoParadoLegacy = null
+    }
+  }
+  if (blocoParadoLegacy) {
+    const ult = ordenado[ordenado.length - 1]
+    paradoMinLegacy += (new Date(ult.dt) - new Date(blocoParadoLegacy.ini)) / 60000
+  }
 
-    if (m.evt4 === 1 && (m.vel === null || m.vel < 1)) paradoMin += deltaMin
-    if (m.evt34 || (m.vel && m.vel > LIMITE_VEL))      excessoVelMin += deltaMin
+  // === Marcha lenta REAL (3 testes) ===
+  const blocosML = blocosMarchaLenta(ordenado)
+  const blocosMLValidos = blocosML.filter(b => b.valido)
+  const paradoMin = Math.round(
+    blocosMLValidos.reduce((s, b) => s + b.duracaoMin, 0)
+  )
 
-    if (m.vel && m.vel > velMax) velMax = m.vel
-    if (m.odm && m.odm > 0 && m.odm < odmMin) odmMin = m.odm
-    if (m.odm && m.odm > odmMax) odmMax = m.odm
+  // === Excesso de velocidade REAL (blocos confirmados) ===
+  const blocosExc = blocosExcesso(ordenado)
+  const blocosExcValidos = blocosExc.filter(b => b.valido)
+  const excessoVelMin = Math.round(
+    blocosExcValidos.reduce((s, b) => s + b.duracaoMin, 0)
+  )
+
+  // === Picos suspeitos (140 < vel <= 200) — diagnóstico ===
+  const picosSuspeitos = ordenado
+    .filter(m => m.velSuspeita)
+    .map(m => ({
+      dt: m.dt,
+      vel: Math.round(m.vel),
+      mun: m.mun || null,
+      uf: m.uf || null,
+    }))
+
+  // velMax: pico de blocos confirmados; sem excesso, máximo das NÃO suspeitas
+  let velMax = 0
+  if (blocosExcValidos.length > 0) {
+    velMax = Math.max(...blocosExcValidos.map(b => b.velMax))
+  } else {
+    for (const m of ordenado) {
+      if (m.vel != null && !m.velSuspeita && m.vel > velMax) velMax = m.vel
+    }
+  }
+
+  // === KM rodado com sanity check ===
+  let kmRodadoHoje = 0
+  let kmFlag = null
+  if (odmMin !== Infinity && odmMax > 0) {
+    const bruto = odmMax - odmMin
+    if (bruto < 0) { kmRodadoHoje = 0; kmFlag = 'odometro_negativo' }
+    else if (bruto > KM_MAX_DIA) { kmRodadoHoje = KM_MAX_DIA; kmFlag = 'odometro_capado' }
+    else kmRodadoHoje = bruto
   }
 
   return {
-    paradoMin: Math.round(paradoMin),
-    excessoVelMin: Math.round(excessoVelMin),
+    paradoMin,
+    excessoVelMin,
     velMax: Math.round(velMax),
-    kmRodado: (odmMin !== Infinity && odmMax > 0) ? odmMax - odmMin : 0,
+    kmRodado: Math.round(kmRodadoHoje),
+    kmFlag,
+    frenagensBruscas,
+    aceleracoesBruscas,
+    picosSuspeitos,
     ultima: ordenado[ordenado.length - 1],
+    blocosMarchaLenta: blocosMLValidos,
+    blocosExcesso: blocosExcValidos,
+    msgsSanitizadas: ordenado,
+    legacy: {
+      paradoMin: Math.round(paradoMinLegacy),
+      excessoVelMin: Math.round(excessoVelMinLegacy),
+      velMax: Math.round(velMaxLegacy),
+    },
   }
 }
 
@@ -81,10 +318,8 @@ function statusDoScore(score) {
 
 // =========================================================================
 // Diário de IMPACTO — mesmo algoritmo do /api/dados.js
-// Cada linha = ocorrência consolidada com custo R$. Pensado pra WhatsApp.
+// Recebe blocos JÁ FILTRADOS (ML + excesso). Não filtra de novo.
 // =========================================================================
-const CUSTO_FRENAGEM     = 3.00
-const CUSTO_ACELERACAO   = 1.50
 const CONSUMO_EXTRA_EXC  = 5.4
 
 function fmtHora(dt) {
@@ -101,96 +336,53 @@ function fmtBR(v) {
   return `R$ ${(Math.round(v * 100) / 100).toFixed(2).replace('.', ',')}`
 }
 
-// Só ocorrências de impacto financeiro direto (marcha lenta + pico de vel)
-function montarDiario(msgs, paradoMinTotal = 0) {
+function montarDiario(msgs, paradoMinTotal = 0, blocosML = [], blocosExc = []) {
   if (!msgs || msgs.length === 0) {
-    return [{ h: '—', cor: '#888', ev: 'Sem mensagens nesse dia', det: '', local: '', custo: 0 }]
+    return [{ h: '—', cor: '#888', ev: 'Sem mensagens nesse dia', det: '', custo: 0 }]
   }
-  const ord = [...msgs].sort((a, b) => new Date(a.dt) - new Date(b.dt))
   const ocorr = []
 
-  // 1. Marcha lenta total — local do maior bloco contínuo
-  if (paradoMinTotal >= 5) {
+  // 1. MARCHA LENTA — 1 linha consolidada (com R$ + local do maior bloco)
+  if (paradoMinTotal >= 5 && blocosML.length > 0) {
     const custo = (paradoMinTotal / 60) * CONSUMO_PARADO * PRECO_DIESEL
-    const localMaior = encontrarMaiorBlocoMarchaLentaFD(ord)
+    const maior = blocosML.reduce((a, b) => (a.duracaoMin > b.duracaoMin ? a : b))
+    const mIni = maior.msgs[0]
+    const localMaior = (mIni && mIni.mun) ? `${mIni.mun}/${mIni.uf}` : '—'
     ocorr.push({
       h: fmtDur(paradoMinTotal),
       cor: '#D9A21B',
-      ev: 'Caminhão parado com motor ligado',
-      det: `${fmtDur(paradoMinTotal)} de marcha lenta no dia · combustível desperdiçado`,
-      local: localMaior || '—',
+      ev: `Motor ligado parado · ${fmtBR(custo)}`,
+      det: localMaior,
       custo: Math.round(custo * 100) / 100,
     })
   }
 
-  // 2. Picos de velocidade (1 linha por evento)
-  let excEm = null
-  for (const m of ord) {
-    const vel = Number(m.vel) || 0
-    const emExc = m.evt34 || vel > LIMITE_VEL
-    if (emExc) {
-      if (!excEm) excEm = { dtIni: m.dt, dtFim: m.dt, velMax: vel || LIMITE_VEL, mun: m.mun, uf: m.uf }
-      else {
-        excEm.dtFim = m.dt
-        if (vel > excEm.velMax) { excEm.velMax = vel; excEm.mun = m.mun; excEm.uf = m.uf }
-      }
-    } else if (excEm) { pushExcessoFD(ocorr, excEm); excEm = null }
+  // 2. PICOS DE VELOCIDADE — 1 linha por bloco confirmado
+  for (const b of blocosExc) {
+    const durMin = Math.max(1, Math.round(b.duracaoMin))
+    const custo = (CONSUMO_EXTRA_EXC / 60) * durMin * PRECO_DIESEL
+    ocorr.push({
+      h: fmtHora(b.dtPico),
+      cor: '#E55B3C',
+      ev: `Pico ${Math.round(b.velMax)} km/h por ${durMin} min · ${fmtBR(custo)}`,
+      det: b.mun ? `${b.mun}/${b.uf}` : '—',
+      custo: Math.round(custo * 100) / 100,
+    })
   }
-  if (excEm) pushExcessoFD(ocorr, excEm)
 
   ocorr.sort((a, b) => (b.custo || 0) - (a.custo || 0))
 
   if (ocorr.length === 0) {
-    return [{ h: '✓', cor: '#1D9E75', ev: 'Sem ocorrências de impacto nesse dia', det: '', local: '', custo: 0 }]
+    return [{ h: '✓', cor: '#1D9E75', ev: 'Sem ocorrências de impacto nesse dia', det: '', custo: 0 }]
   }
   return ocorr
 }
 
-function pushExcessoFD(arr, ex) {
-  const durMin = Math.max(1, Math.round((new Date(ex.dtFim) - new Date(ex.dtIni)) / 60000))
-  const custo = (CONSUMO_EXTRA_EXC / 60) * durMin * PRECO_DIESEL
-  arr.push({
-    h: fmtDur(durMin),
-    cor: '#E55B3C',
-    ev: `Pico de velocidade — ${Math.round(ex.velMax)} km/h`,
-    det: `${durMin} min acima do limite de ${LIMITE_VEL} km/h · combustível extra`,
-    local: ex.mun ? `${ex.mun}/${ex.uf}` : '—',
-    custo: Math.round(custo * 100) / 100,
-  })
-}
-
-function encontrarMaiorBlocoMarchaLentaFD(ord) {
-  let melhor = null, atual = null
-  for (const m of ord) {
-    const vel = Number(m.vel) || 0
-    if (m.evt4 === 1 && vel < 1) {
-      if (!atual) atual = { dtIni: m.dt, dtFim: m.dt, mun: m.mun, uf: m.uf }
-      else atual.dtFim = m.dt
-    } else if (atual) {
-      const dur = (new Date(atual.dtFim) - new Date(atual.dtIni)) / 60000
-      if (!melhor || dur > melhor.dur) melhor = { dur, mun: atual.mun, uf: atual.uf }
-      atual = null
-    }
-  }
-  if (atual) {
-    const dur = (new Date(atual.dtFim) - new Date(atual.dtIni)) / 60000
-    if (!melhor || dur > melhor.dur) melhor = { dur, mun: atual.mun, uf: atual.uf }
-  }
-  return melhor && melhor.mun ? `${melhor.mun}/${melhor.uf}` : null
-}
-
 // =========================================================================
-// Detecção de VIAGENS — mesmo algoritmo do /api/dados
+// Detecção de VIAGENS — mesmo algoritmo do /api/dados (constantes no topo)
 // =========================================================================
-const RAIO_RETORNO_KM     = 1.0
-const PARADA_LONGA_MIN    = 240
-const DESTINO_ESTAVEL_MIN = 60
-const VIAGEM_MIN_KM       = 3
-const VIAGEM_MIN_DUR_MIN  = 5
-const PARADA_REGISTRO_MIN = 10
-
 function haversineKm(lat1, lon1, lat2, lon2) {
-  if (!lat1 || !lat2 || !lon1 || !lon2) return null
+  if (lat1 == null || lat2 == null || lon1 == null || lon2 == null) return null
   const toRad = x => (x * Math.PI) / 180
   const R = 6371
   const dLat = toRad(lat2 - lat1)
@@ -200,9 +392,10 @@ function haversineKm(lat1, lon1, lat2, lon2) {
 }
 
 function novaViagemEstado(m) {
+  const v0 = m.vel ?? 0
   return {
     inicioMsg: m, fimMsg: m,
-    velMax: m.vel || 0, velSoma: m.vel || 0, velContagem: m.vel ? 1 : 0,
+    velMax: v0, velSoma: v0, velContagem: v0 > 0 ? 1 : 0,
     excessoAberto: null, excessos: [],
     paradaAberta: null, paradas: [],
     freadas: 0, aceleracoes: 0,
@@ -369,8 +562,13 @@ export default async function handler(req, res) {
       const score = calcularScore(ag.paradoMin, ag.excessoVelMin)
       const { status, statusTxt } = statusDoScore(score)
       const perda = Math.round((ag.paradoMin / 60) * CONSUMO_PARADO * PRECO_DIESEL * 100) / 100
-      const diario = montarDiario(minhasMsgs, ag.paradoMin)
-      const viagens = detectarViagens(minhasMsgs)
+      const diario = montarDiario(
+        ag.msgsSanitizadas || minhasMsgs,
+        ag.paradoMin,
+        ag.blocosMarchaLenta || [],
+        ag.blocosExcesso || []
+      )
+      const viagens = detectarViagens(ag.msgsSanitizadas || minhasMsgs)
 
       return {
         data: dataAlvo, vei_id: v.vei_id,
@@ -385,6 +583,13 @@ export default async function handler(req, res) {
         posicao_final: ag.ultima.mun ? `${ag.ultima.mun}/${ag.ultima.uf}` : null,
         diario,
         viagens,
+        // Diagnóstico/comparação — persistido no snapshot histórico
+        // (colunas opcionais; banco aceita jsonb null se não existirem)
+        diagnostico: {
+          kmFlag: ag.kmFlag || null,
+          picosSuspeitos: ag.picosSuspeitos,
+          legacy: ag.legacy,
+        },
       }
     })
 
