@@ -15,6 +15,7 @@ const KM_MAX_DIA = 1500
 const DEDUP_INTERVALO_MS = 1
 const ML_DURACAO_MIN = 5, ML_RAIO_M = 50, ML_DELTA_ODM_KM = 0.1
 const EXC_MIN_AMOSTRAS = 2, EXC_DURACAO_MIN_S = 30
+const MAX_GAP_BLOCO_S = 300, MAX_GAP_BLOCO_M = 10_000
 
 function distanciaM(lat1, lon1, lat2, lon2) {
   if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return 0
@@ -60,7 +61,10 @@ function blocosExcesso(msgsOrd) {
     const fim = bloco.msgs[bloco.msgs.length - 1]
     const proxima = msgsOrd[proxIdx]
     bloco.duracaoCertaS = (new Date(fim.dt) - new Date(ini.dt)) / 1000
-    const fimEfetivo = proxima ? new Date(proxima.dt) : new Date(new Date(fim.dt).getTime() + 60_000)
+    const dtUltimo = new Date(fim.dt).getTime()
+    const fimEfetivo = (proxima && (new Date(proxima.dt).getTime() - dtUltimo) / 1000 <= MAX_GAP_BLOCO_S)
+      ? new Date(proxima.dt)
+      : new Date(dtUltimo + 60_000)
     bloco.duracaoS = (fimEfetivo - new Date(ini.dt)) / 1000
     bloco.duracaoMin = bloco.duracaoS / 60
     bloco.qtdMsgs = bloco.msgs.length
@@ -75,6 +79,14 @@ function blocosExcesso(msgsOrd) {
     const velAcima = m.vel != null && m.vel > LIMITE_VEL && !m.velSuspeita
     const acima = velAcima || m.evt34 === 1
     if (acima) {
+      if (bloco) {
+        const ult = bloco.msgs[bloco.msgs.length - 1]
+        const dtSec = (new Date(m.dt) - new Date(ult.dt)) / 1000
+        const distM = distanciaM(ult.lat, ult.lon, m.lat, m.lon)
+        if (dtSec > MAX_GAP_BLOCO_S || distM > MAX_GAP_BLOCO_M) {
+          fechar(msgsOrd.length)
+        }
+      }
       if (!bloco) bloco = { msgs: [] }
       bloco.msgs.push(m)
     } else if (bloco) fechar(i)
@@ -91,7 +103,10 @@ function blocosMarchaLenta(msgsOrd) {
     const ini = bloco.msgs[0]
     const fim = bloco.msgs[bloco.msgs.length - 1]
     const proxima = msgsOrd[proxIdx]
-    const fimEfetivo = proxima ? new Date(proxima.dt) : new Date(new Date(fim.dt).getTime() + 60_000)
+    const dtUltimo = new Date(fim.dt).getTime()
+    const fimEfetivo = (proxima && (new Date(proxima.dt).getTime() - dtUltimo) / 1000 <= MAX_GAP_BLOCO_S)
+      ? new Date(proxima.dt)
+      : new Date(dtUltimo + 60_000)
     const duracaoMin = (fimEfetivo - new Date(ini.dt)) / 60000
     const deslocM = distanciaM(ini.lat, ini.lon, fim.lat, fim.lon)
     const dOdm = (fim.odm && ini.odm) ? Math.max(0, fim.odm - ini.odm) : 0
@@ -106,6 +121,14 @@ function blocosMarchaLenta(msgsOrd) {
     const m = msgsOrd[i]
     const parado = m.evt4 === 1 && (m.vel === null || m.vel < 1)
     if (parado) {
+      if (bloco) {
+        const ult = bloco.msgs[bloco.msgs.length - 1]
+        const dtSec = (new Date(m.dt) - new Date(ult.dt)) / 1000
+        const distM = distanciaM(ult.lat, ult.lon, m.lat, m.lon)
+        if (dtSec > MAX_GAP_BLOCO_S || distM > MAX_GAP_BLOCO_M) {
+          fechar(msgsOrd.length)
+        }
+      }
       if (!bloco) bloco = { msgs: [] }
       bloco.msgs.push(m)
     } else if (bloco) fechar(i)
@@ -401,6 +424,79 @@ function check(nome, cond, info = '') {
   check('Cenário 14: paralelo mostra falso-positivo evitado (legacy > novo)',
     legacyExc > novoExc && validos.length === 1,
     `legacy=${legacyExc.toFixed(2)}min novo=${novoExc.toFixed(2)}min`)
+}
+
+// === CENÁRIO 15: GAP DE TELEMETRIA — caso BPO8J52 ===========================
+// Caminhão parado em ponto A (Sorocaba), perde sinal 2h, retorna parado em
+// ponto B (SBC, ~100km de distância). Sem gap detection, isso virava 1 bloco
+// de 2h+ contado como marcha lenta. Com fix: 2 blocos separados, gap não conta.
+{
+  const msgs = [
+    // Ponto A — Sorocaba — 3 msgs parado
+    { dt: ts(0),  vel: 0, evt4: 1, lat: -23.50, lon: -47.45, odm: 100000 },
+    { dt: ts(1),  vel: 0, evt4: 1, lat: -23.50, lon: -47.45, odm: 100000 },
+    { dt: ts(2),  vel: 0, evt4: 1, lat: -23.50, lon: -47.45, odm: 100000 },
+    // === GAP de 2h — rastreador perdeu sinal, caminhão rodou Sorocaba→SBC ===
+    // Ponto B — SBC — 10 msgs parado (~5min de marcha lenta real)
+    { dt: ts(120),    vel: 0, evt4: 1, lat: -23.74, lon: -46.55, odm: 100100 },
+    { dt: ts(120, 30),vel: 0, evt4: 1, lat: -23.74, lon: -46.55, odm: 100100 },
+    { dt: ts(121),    vel: 0, evt4: 1, lat: -23.74, lon: -46.55, odm: 100100 },
+    { dt: ts(121, 30),vel: 0, evt4: 1, lat: -23.74, lon: -46.55, odm: 100100 },
+    { dt: ts(122),    vel: 0, evt4: 1, lat: -23.74, lon: -46.55, odm: 100100 },
+    { dt: ts(122, 30),vel: 0, evt4: 1, lat: -23.74, lon: -46.55, odm: 100100 },
+    { dt: ts(123),    vel: 0, evt4: 1, lat: -23.74, lon: -46.55, odm: 100100 },
+    { dt: ts(123, 30),vel: 0, evt4: 1, lat: -23.74, lon: -46.55, odm: 100100 },
+    { dt: ts(124),    vel: 0, evt4: 1, lat: -23.74, lon: -46.55, odm: 100100 },
+    { dt: ts(125),    vel: 0, evt4: 1, lat: -23.74, lon: -46.55, odm: 100100 },
+    // Saída de SBC — caminhão volta a se mover
+    { dt: ts(130),    vel: 30, evt4: 1, lat: -23.74, lon: -46.55, odm: 100101 },
+  ]
+  const ord = sanitizarMensagens(msgs)
+  const blocos = blocosMarchaLenta(ord)
+  // Esperado: 2 blocos separados, total ≪ 130min (caso quebrado).
+  // Sem fix: 1 bloco de 130min. Com fix: 2 blocos de 3min + 10min = 13min.
+  const totalMin = blocos.reduce((s, b) => s + b.duracaoMin, 0)
+  check('Cenário 15: GAP de 2h Sorocaba→SBC quebra bloco (não conta gap)',
+    blocos.length === 2 && totalMin < 30,
+    `blocos=${blocos.length} totalMin=${totalMin?.toFixed(1)}`)
+}
+
+// === CENÁRIO 16: GAP por SALTO DE POSIÇÃO ==================================
+// Δt pequeno (2min, dentro do limite temporal) mas salto de 400km — só pode
+// ser sinal perdido. Quebra por distância protege contra teleporte.
+{
+  const msgs = [
+    { dt: ts(0), vel: 0, evt4: 1, lat: -23.50, lon: -46.60, odm: 100000 },  // SP
+    { dt: ts(1), vel: 0, evt4: 1, lat: -23.50, lon: -46.60, odm: 100000 },
+    { dt: ts(3), vel: 0, evt4: 1, lat: -22.90, lon: -43.20, odm: 100000 },  // RJ (~400km)
+    { dt: ts(4), vel: 0, evt4: 1, lat: -22.90, lon: -43.20, odm: 100000 },
+    { dt: ts(8), vel: 30, evt4: 1, lat: -22.90, lon: -43.20, odm: 100001 },
+  ]
+  const ord = sanitizarMensagens(msgs)
+  const blocos = blocosMarchaLenta(ord)
+  check('Cenário 16: salto de 400km em 2min quebra bloco (gap espacial)',
+    blocos.length === 2,
+    `blocos=${blocos.length}`)
+}
+
+// === CENÁRIO 17: marcha lenta CONTÍNUA sem gap (regression test) ============
+// 20 msgs a cada 30s no mesmo local — bloco ÚNICO, válido, ~10min de duração.
+// Garante que a quebra por gap não está sendo falsa-positivamente acionada.
+{
+  const msgs = []
+  for (let i = 0; i < 20; i++) {
+    msgs.push({ dt: ts(0, i*30), vel: 0, evt4: 1,
+      lat: -23.5 + (Math.random()-0.5)*0.0001,
+      lon: -46.6 + (Math.random()-0.5)*0.0001,
+      odm: 100000 + i*0.005 })
+  }
+  msgs.push({ dt: ts(11), vel: 25, evt4: 1, lat: -23.5, lon: -46.6, odm: 100000.1 })
+  const ord = sanitizarMensagens(msgs)
+  const blocos = blocosMarchaLenta(ord)
+  const validos = blocos.filter(b => b.valido)
+  check('Cenário 17: telemetria normal a cada 30s NÃO quebra bloco (regression)',
+    blocos.length === 1 && validos.length === 1 && validos[0].duracaoMin >= 9,
+    `blocos=${blocos.length} dur=${blocos[0]?.duracaoMin?.toFixed(1)}min`)
 }
 
 // === RESULTADO FINAL ======================================================

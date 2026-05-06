@@ -48,6 +48,15 @@ const ML_DELTA_ODM_KM = 0.1    // km  — 100m no tacógrafo já é movimento de
 const EXC_MIN_AMOSTRAS  = 2
 const EXC_DURACAO_MIN_S = 30
 
+// === GAP de telemetria — quebra bloco quando rastreador perde sinal ==========
+// Se duas msgs CONSECUTIVAS no mesmo bloco têm Δt > MAX_GAP_BLOCO_S OU salto de
+// posição > MAX_GAP_BLOCO_M, o bloco é dividido. Isso evita o caso clássico de:
+//   msg t0 (parado, motor ligado) → [perde sinal 2h, andando estrada] → msg t1
+//   (parado, motor ligado, 100 km de distância). Sem essa quebra, o sistema
+//   contava as 2h do gap como marcha lenta — mesmo o caminhão tendo viajado.
+const MAX_GAP_BLOCO_S = 300      // 5 min — telemetria normal vem a cada 30-60s
+const MAX_GAP_BLOCO_M = 10_000   // 10 km — salto inequívoco de posição = viajou offline
+
 // === Detecção de viagem ===
 const VIAGEM_MIN_KM        = 5    // viagens menores que isso são lixo (ex: manobra de pátio)
 const VIAGEM_MIN_DUR_MIN   = 15   // viagens curtas demais são lixo (ex: teste de motor)
@@ -137,9 +146,13 @@ function blocosExcesso(msgsOrd) {
     // entre a primeira e a última msg do bloco. Se for 1 msg só, é 0
     // (não temos como afirmar que ficou X segundos acima).
     bloco.duracaoCertaS = (new Date(fim.dt) - new Date(ini.dt)) / 1000
-    // duracaoEstimadaS: estimativa pra exibição (até a próxima msg ou +60s)
-    // Útil pra mostrar duração no diário, NUNCA pra validar bloco.
-    const fimEfetivo = proxima ? new Date(proxima.dt) : new Date(new Date(fim.dt).getTime() + 60_000)
+    // duracaoEstimadaS: estimativa pra exibição (até a próxima msg ou +60s).
+    // Mas se a próxima msg está a > MAX_GAP_BLOCO_S (gap de telemetria), NÃO
+    // conta o gap como tempo de excesso — usa só o intervalo conhecido + 60s.
+    const dtUltimo = new Date(fim.dt).getTime()
+    const fimEfetivo = (proxima && (new Date(proxima.dt).getTime() - dtUltimo) / 1000 <= MAX_GAP_BLOCO_S)
+      ? new Date(proxima.dt)
+      : new Date(dtUltimo + 60_000)
     bloco.duracaoS = (fimEfetivo - new Date(ini.dt)) / 1000
     bloco.duracaoMin = bloco.duracaoS / 60
     bloco.qtdMsgs = bloco.msgs.length
@@ -169,6 +182,17 @@ function blocosExcesso(msgsOrd) {
     const velAcima = m.vel != null && m.vel > LIMITE_VEL && !m.velSuspeita
     const acima = velAcima || m.evt34 === 1
     if (acima) {
+      // Gap de telemetria: se a msg anterior do bloco está a > 5min OU > 10km
+      // de distância, fecha o bloco atual e começa um novo. Evita "costurar"
+      // dois eventos de excesso separados por longo período sem sinal.
+      if (bloco) {
+        const ult = bloco.msgs[bloco.msgs.length - 1]
+        const dtSec = (new Date(m.dt) - new Date(ult.dt)) / 1000
+        const distM = distanciaM(ult.lat, ult.lon, m.lat, m.lon)
+        if (dtSec > MAX_GAP_BLOCO_S || distM > MAX_GAP_BLOCO_M) {
+          fechar(msgsOrd.length)  // fecha sem usar m como proxima
+        }
+      }
       if (!bloco) bloco = { msgs: [] }
       bloco.msgs.push(m)
     } else if (bloco) {
@@ -191,9 +215,13 @@ function blocosMarchaLenta(msgsOrd) {
     const ini = bloco.msgs[0]
     const fim = bloco.msgs[bloco.msgs.length - 1]
     // Duração: do início do bloco até a próxima mensagem (que já não é parada),
-    // ou +1 min se é o fim do dia
+    // ou +1 min se é o fim do dia. Se a próxima msg está a > MAX_GAP_BLOCO_S
+    // (gap de telemetria), NÃO usa ela como fim — o gap não conta como parado.
     const proxima = msgsOrd[proxIdx]
-    const fimEfetivo = proxima ? new Date(proxima.dt) : new Date(new Date(fim.dt).getTime() + 60_000)
+    const dtUltimo = new Date(fim.dt).getTime()
+    const fimEfetivo = (proxima && (new Date(proxima.dt).getTime() - dtUltimo) / 1000 <= MAX_GAP_BLOCO_S)
+      ? new Date(proxima.dt)
+      : new Date(dtUltimo + 60_000)
     const duracaoMin = (fimEfetivo - new Date(ini.dt)) / 60000
     const deslocM = distanciaM(ini.lat, ini.lon, fim.lat, fim.lon)
     const dOdm = (fim.odm && ini.odm) ? Math.max(0, fim.odm - ini.odm) : 0
@@ -212,6 +240,21 @@ function blocosMarchaLenta(msgsOrd) {
     const m = msgsOrd[i]
     const parado = m.evt4 === 1 && (m.vel === null || m.vel < 1)
     if (parado) {
+      // GAP de telemetria: se rastreador perdeu sinal entre a última msg do
+      // bloco atual e essa nova msg (Δt > 5min OU salto > 10km), o caminhão
+      // pode ter rodado offline. Fecha o bloco atual SEM contar o gap como
+      // marcha lenta, e começa um novo bloco a partir desta msg.
+      // Esse fix elimina o falso positivo clássico:
+      //   "chegou parado em A → perdeu sinal → voltou parado em B (100km)"
+      //   Sem isso, o sistema contava todas as horas do gap como motor ligado.
+      if (bloco) {
+        const ult = bloco.msgs[bloco.msgs.length - 1]
+        const dtSec = (new Date(m.dt) - new Date(ult.dt)) / 1000
+        const distM = distanciaM(ult.lat, ult.lon, m.lat, m.lon)
+        if (dtSec > MAX_GAP_BLOCO_S || distM > MAX_GAP_BLOCO_M) {
+          fechar(msgsOrd.length)  // fecha sem proxima → gap não conta
+        }
+      }
       if (!bloco) bloco = { msgs: [] }
       bloco.msgs.push(m)
     } else if (bloco) {

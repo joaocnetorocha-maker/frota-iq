@@ -42,6 +42,12 @@ const ML_DELTA_ODM_KM = 0.1  // km
 const EXC_MIN_AMOSTRAS  = 2
 const EXC_DURACAO_MIN_S = 30
 
+// === GAP de telemetria — quebra bloco quando rastreador perde sinal ===
+// Δt > 5min OU salto de posição > 10km entre msgs consecutivas do mesmo
+// bloco → divide o bloco. Evita contar período sem sinal como marcha lenta.
+const MAX_GAP_BLOCO_S = 300       // 5 min
+const MAX_GAP_BLOCO_M = 10_000    // 10 km
+
 // === Detecção de viagem ===
 const VIAGEM_MIN_KM        = 5
 const VIAGEM_MIN_DUR_MIN   = 15
@@ -109,7 +115,10 @@ function blocosExcesso(msgsOrd) {
     const proxima = msgsOrd[proxIdx]
     // duracaoCertaS: tempo CONHECIDO acima do limite (só msg[0]→msg[N-1])
     bloco.duracaoCertaS = (new Date(fim.dt) - new Date(ini.dt)) / 1000
-    const fimEfetivo = proxima ? new Date(proxima.dt) : new Date(new Date(fim.dt).getTime() + 60_000)
+    const dtUltimo = new Date(fim.dt).getTime()
+    const fimEfetivo = (proxima && (new Date(proxima.dt).getTime() - dtUltimo) / 1000 <= MAX_GAP_BLOCO_S)
+      ? new Date(proxima.dt)
+      : new Date(dtUltimo + 60_000)
     bloco.duracaoS = (fimEfetivo - new Date(ini.dt)) / 1000
     bloco.duracaoMin = bloco.duracaoS / 60
     bloco.qtdMsgs = bloco.msgs.length
@@ -133,6 +142,15 @@ function blocosExcesso(msgsOrd) {
     const velAcima = m.vel != null && m.vel > LIMITE_VEL && !m.velSuspeita
     const acima = velAcima || m.evt34 === 1
     if (acima) {
+      // Gap de telemetria: Δt > 5min OU salto > 10km → quebra bloco
+      if (bloco) {
+        const ult = bloco.msgs[bloco.msgs.length - 1]
+        const dtSec = (new Date(m.dt) - new Date(ult.dt)) / 1000
+        const distM = distanciaM(ult.lat, ult.lon, m.lat, m.lon)
+        if (dtSec > MAX_GAP_BLOCO_S || distM > MAX_GAP_BLOCO_M) {
+          fechar(msgsOrd.length)
+        }
+      }
       if (!bloco) bloco = { msgs: [] }
       bloco.msgs.push(m)
     } else if (bloco) {
@@ -151,7 +169,11 @@ function blocosMarchaLenta(msgsOrd) {
     const ini = bloco.msgs[0]
     const fim = bloco.msgs[bloco.msgs.length - 1]
     const proxima = msgsOrd[proxIdx]
-    const fimEfetivo = proxima ? new Date(proxima.dt) : new Date(new Date(fim.dt).getTime() + 60_000)
+    // Se a próxima msg está a > MAX_GAP_BLOCO_S, NÃO usa ela como fim — gap não conta
+    const dtUltimo = new Date(fim.dt).getTime()
+    const fimEfetivo = (proxima && (new Date(proxima.dt).getTime() - dtUltimo) / 1000 <= MAX_GAP_BLOCO_S)
+      ? new Date(proxima.dt)
+      : new Date(dtUltimo + 60_000)
     const duracaoMin = (fimEfetivo - new Date(ini.dt)) / 60000
     const deslocM = distanciaM(ini.lat, ini.lon, fim.lat, fim.lon)
     const dOdm = (fim.odm && ini.odm) ? Math.max(0, fim.odm - ini.odm) : 0
@@ -169,6 +191,17 @@ function blocosMarchaLenta(msgsOrd) {
     const m = msgsOrd[i]
     const parado = m.evt4 === 1 && (m.vel === null || m.vel < 1)
     if (parado) {
+      // GAP de telemetria: rastreador perdeu sinal, caminhão pode ter rodado.
+      // Δt > 5min OU salto > 10km entre msgs do mesmo bloco → quebra bloco
+      // sem contar o gap como marcha lenta. Fix do caso BPO8J52 (Sorocaba→SBC).
+      if (bloco) {
+        const ult = bloco.msgs[bloco.msgs.length - 1]
+        const dtSec = (new Date(m.dt) - new Date(ult.dt)) / 1000
+        const distM = distanciaM(ult.lat, ult.lon, m.lat, m.lon)
+        if (dtSec > MAX_GAP_BLOCO_S || distM > MAX_GAP_BLOCO_M) {
+          fechar(msgsOrd.length)
+        }
+      }
       if (!bloco) bloco = { msgs: [] }
       bloco.msgs.push(m)
     } else if (bloco) {
