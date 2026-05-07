@@ -28,10 +28,33 @@ function opcoesData() {
   return opts
 }
 
+function formataDiesel(val) {
+  const nums = String(Math.round(val * 100)).padStart(3,'0')
+  const inteiro = nums.slice(0,-2).replace(/^0+/,'') || '0'
+  return `${inteiro},${nums.slice(-2)}`
+}
+
+function formataConsumo(val) {
+  const nums = String(Math.round(val * 10)).padStart(2,'0')
+  const inteiro = nums.slice(0,-1).replace(/^0+/,'') || '0'
+  return `${inteiro},${nums.slice(-1)}`
+}
+
+function calcPerda(min, config) {
+  const horas = min / 60
+  return Math.round(horas * config.consumoParado * config.precoDiesel * 100) / 100
+}
+
+function iniciaisDe(nome) {
+  return nome.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase()
+}
+
 export default function App() {
   const [tela, setTela] = useState('painel')
   const [frotaFiltro, setFrotaFiltro] = useState('Todas')
-  const [selecionado, setSelecionado] = useState(0)
+  const [selecionado, setSelecionado] = useState(null)
+  const [selecionadoAlerta, setSelecionadoAlerta] = useState(null)
+  const [mostrarMenuAvatar, setMostrarMenuAvatar] = useState(false)
   const [config, setConfig] = useState({
     consumoParado: 3.5,
     precoDiesel: 6.50,
@@ -46,10 +69,9 @@ export default function App() {
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState(null)
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null)
-  // dataConsulta: '' = hoje (tempo real, polling 30s), 'YYYY-MM-DD' = histórico estático
   const [dataConsulta, setDataConsulta] = useState('')
 
-  // Atualiza data/hora a cada minuto (independente do polling de dados)
+  // Atualiza data/hora a cada minuto
   useEffect(() => {
     const id = setInterval(() => setAgora(new Date()), 60_000)
     return () => clearInterval(id)
@@ -94,22 +116,13 @@ export default function App() {
 
   const visiveis = veiculos.filter(v => frotaFiltro === 'Todas' || v.frota === frotaFiltro)
 
-  // === Plano de Ação ===
-  // Score 0–100 por motorista derivado do tempo em marcha lenta.
-  // Quanto mais minutos parados com motor ligado, menor o score.
+  // === Plano de Ação — sagrado, mantém intacto ===
   const planoAcao = useMemo(() => {
-    // Score composto: pondera marcha lenta + excesso de velocidade + desvio de rota.
-    // MESMA fórmula do dadosBeta.js — manter sincronizado!
     const calcScore = (v) =>
       Math.max(0, Math.min(100, Math.round(
         95 - (v.paradoMin || 0) * 0.55 - (v.excessoVelMin || 0) * 0.9 - (v.kmDesvio || 0) * 0.4
       )))
 
-    const iniciaisDe = (nome) =>
-      nome.split(/\s+/).filter(Boolean).map(n => n[0]).slice(0, 2).join('').toUpperCase()
-
-    // Identifica qual é a dor predominante do motorista (a que mais derrubou o score).
-    // Retorna 'marchaLenta' | 'velocidade' | 'desvio'.
     const dorPrincipal = (v) => {
       const dorML = (v.paradoMin || 0) * 0.55
       const dorVel = (v.excessoVelMin || 0) * 0.9
@@ -119,7 +132,6 @@ export default function App() {
       return 'marchaLenta'
     }
 
-    // Retorna lista resumida das dimensões com problema, pra mostrar no "oQue"
     const dimensoesComProblema = (v) => {
       const lista = []
       if (v.paradoMin > 18) lista.push(`marcha lenta (${v.parado})`)
@@ -136,7 +148,6 @@ export default function App() {
         ? dims.length === 1 ? dims[0] : `${dims.slice(0, -1).join(', ')} e ${dims[dims.length - 1]}`
         : ''
 
-      // VERDE — score 80+
       if (v.score >= 80) {
         return {
           nivel: 'ok',
@@ -147,7 +158,6 @@ export default function App() {
         }
       }
 
-      // === MARCHA LENTA é a dor principal ===
       if (dor === 'marchaLenta') {
         if (v.score < 40) {
           return {
@@ -173,7 +183,6 @@ export default function App() {
         }
       }
 
-      // === VELOCIDADE é a dor principal ===
       if (dor === 'velocidade') {
         if (v.score < 40) {
           return {
@@ -199,7 +208,6 @@ export default function App() {
         }
       }
 
-      // === DESVIO DE ROTA é a dor principal ===
       if (v.score < 40) {
         return {
           nivel: 'critico', dor,
@@ -242,7 +250,6 @@ export default function App() {
       comScore.filter(v => v.status === 'verde').reduce((s, v) => s + v.perdaSemana * 0.4, 0)
     )
 
-    // Lookup por placa pra buscar o plano de ação de qualquer veículo selecionado
     const porPlaca = {}
     comScore.forEach(c => { porPlaca[c.placa] = c })
 
@@ -256,54 +263,37 @@ export default function App() {
       total: comScore.length,
     }
   }, [visiveis])
-  const v = veiculos[selecionado]
-  const perdaTotal = visiveis.reduce((s, v) => s + v.perdaHoje, 0)
-  const alertas = visiveis.filter(v => v.status !== 'verde').length
-  const criticos = visiveis.filter(v => v.status === 'vermelho').length
-  const amarelos = visiveis.filter(v => v.status === 'amarelo').length
-  const ranking = [...visiveis].sort((a, b) => b.perdaSemana - a.perdaSemana).slice(0, 5)
-  const maxPerda = ranking[0]?.perdaSemana || 1
-  const projecaoMensal = Math.round(perdaTotal * 30)
-  const economiaPotencial = Math.round(projecaoMensal * 0.6)
 
-  const calcPerda = (min) => {
-    const horas = min / 60
-    return Math.round(horas * config.consumoParado * config.precoDiesel * 100) / 100
-  }
+  const frotas = ['Todas', ...new Set(veiculos.map(v => v.frota))]
+  const v = selecionado !== null ? veiculos[selecionado] : null
 
   const salvarConfig = () => {
     setConfig({
       ...configTemp,
       precoDiesel: typeof configTemp.precoDiesel === 'number' ? configTemp.precoDiesel : parseInt(String(configTemp.precoDiesel).replace(/\D/g,'')) / 100,
-consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumoParado : parseInt(String(configTemp.consumoParado).replace(/\D/g,'')) / 10,
+      consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumoParado : parseInt(String(configTemp.consumoParado).replace(/\D/g,'')) / 10,
     })
     setSalvo(true)
     setTimeout(() => setSalvo(false), 2000)
   }
 
-  const formataDiesel = (val) => {
-    const nums = String(Math.round(val * 100)).padStart(3,'0')
-    const inteiro = nums.slice(0,-2).replace(/^0+/,'') || '0'
-    return `${inteiro},${nums.slice(-2)}`
-  }
+  // Saudação dinâmica
+  const saudacao = (() => {
+    const h = agora.getHours()
+    if (h < 12) return 'Bom dia'
+    if (h < 18) return 'Boa tarde'
+    return 'Boa noite'
+  })()
 
-  const formataConsumo = (val) => {
-    const nums = String(Math.round(val * 10)).padStart(2,'0')
-    const inteiro = nums.slice(0,-1).replace(/^0+/,'') || '0'
-    return `${inteiro},${nums.slice(-1)}`
-  }
-
-  const frotas = ['Todas', ...new Set(veiculos.map(v => v.frota))]
-
-  const dataHoraTxt = agora.toLocaleString('pt-BR', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
-  }).replace(',', ' —')
+  const dataFormatada = agora.toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long'
+  }).replace(/^./, c => c.toUpperCase())
 
   return (
     <div className="app">
       {(() => {
-        // Banner de status da conexão com /api/dados
         let bg = '#E8F7EE', bd = '#00C896', cor = '#0E5F46', txt = ''
         if (erro) {
           bg = '#FDECEC'; bd = '#D14343'; cor = '#7A1F1F'
@@ -312,7 +302,6 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
           bg = '#EEE'; bd = '#999'; cor = '#444'
           txt = 'CONECTANDO AO SERVIDOR...'
         } else if (dataConsulta) {
-          // Modo histórico — fundo azul-acinzentado pra diferenciar
           bg = '#EAF2FA'; bd = '#5B7FA8'; cor = '#1F3A5C'
           txt = `HISTÓRICO · DIA ${dataConsulta} · ${veiculos.length} VEÍCULOS · DADOS FECHADOS`
         } else if (ultimaAtualizacao) {
@@ -338,22 +327,92 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
           </div>
         )
       })()}
+
+      {/* TOP BAR */}
       <div className="topo">
-        <div className="logo">VEBRA<span>X</span></div>
-        <nav className="nav">
-          <button className={`nav-btn ${tela === 'painel' ? 'ativo' : ''}`} onClick={() => setTela('painel')}>Painel</button>
-          <button className={`nav-btn ${tela === 'relatorio' ? 'ativo' : ''}`} onClick={() => setTela('relatorio')}>Relatório</button>
-          <button className={`nav-btn ${tela === 'config' ? 'ativo' : ''}`} onClick={() => setTela('config')}>Configurações</button>
-        </nav>
-        <div className="data-hora">{dataHoraTxt}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
+          <div className="logo">VEBRA<span>X</span></div>
+          <nav className="nav">
+            <button className={`nav-btn ${tela === 'painel' ? 'ativo' : ''}`} onClick={() => setTela('painel')}>
+              Painel
+            </button>
+            <button className={`nav-btn ${tela === 'veiculos' ? 'ativo' : ''}`} onClick={() => setTela('veiculos')}>
+              Veículos
+            </button>
+            <button className={`nav-btn ${tela === 'alertas' ? 'ativo' : ''}`} onClick={() => setTela('alertas')}>
+              Alertas
+            </button>
+            <button className={`nav-btn ${tela === 'relatorio' ? 'ativo' : ''}`} onClick={() => setTela('relatorio')}>
+              Relatórios
+            </button>
+          </nav>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ textAlign: 'right' }}>
+            <div className="cidade">São José dos Pinhais</div>
+            <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>{dataFormatada}</div>
+          </div>
+          <div style={{ position: 'relative' }}>
+            <button
+              className="avatar"
+              onClick={() => setMostrarMenuAvatar(!mostrarMenuAvatar)}
+              title="Menu"
+            >
+              JM
+            </button>
+            {mostrarMenuAvatar && (
+              <div className="menu-avatar">
+                <button
+                  onClick={() => {
+                    setTela('config')
+                    setMostrarMenuAvatar(false)
+                  }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    padding: '8px 12px',
+                    border: 'none',
+                    background: 'transparent',
+                    textAlign: 'left',
+                    fontSize: 13,
+                    color: '#0F1419',
+                    cursor: 'pointer',
+                    borderRadius: 4,
+                  }}
+                >
+                  Configurações
+                </button>
+                <button
+                  onClick={() => alert('Sair')}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    padding: '8px 12px',
+                    border: 'none',
+                    background: 'transparent',
+                    textAlign: 'left',
+                    fontSize: 13,
+                    color: '#0F1419',
+                    cursor: 'pointer',
+                    borderRadius: 4,
+                    marginTop: 4,
+                  }}
+                >
+                  Sair
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      {(tela === 'painel' || tela === 'relatorio') && (
+      {/* FILTROS — visíveis em Painel/Veículos/Relatórios */}
+      {(tela === 'painel' || tela === 'veiculos' || tela === 'relatorio') && (
         <div style={{
           display: 'flex',
           alignItems: 'center',
           gap: 12,
-          padding: '12px 0 18px',
+          padding: '12px 24px 18px',
           flexWrap: 'wrap',
         }}>
           <span style={{ fontSize: 13, color: '#666', fontWeight: 500 }}>
@@ -384,7 +443,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
           </select>
 
           <span style={{ fontSize: 13, color: '#666', fontWeight: 500 }}>
-            Filtrar por veículo:
+            Frota:
           </span>
           <select
             value={frotaFiltro}
@@ -428,563 +487,630 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
             </button>
           )}
           <span style={{ fontSize: 12, color: '#999', marginLeft: 'auto' }}>
-            {tela === 'relatorio' ? 'Relatório de' : 'Mostrando'} {visiveis.length} {visiveis.length === 1 ? 'veículo' : 'veículos'}
+            {visiveis.length} {visiveis.length === 1 ? 'veículo' : 'veículos'}
           </span>
         </div>
       )}
 
+      {/* TELA PAINEL */}
       {tela === 'painel' && (
-        <>
-          {/* 3 KPIs principais — o que importa pro gestor saber em 5 segundos */}
-          <div className="resumo-grid" style={{gridTemplateColumns:'repeat(3, 1fr)', marginBottom:'1.25rem'}}>
-            <div className="metrica">
-              <div className="metrica-label">Perda estimada hoje</div>
-              <div className="metrica-valor alerta">R$ {perdaTotal.toLocaleString('pt-BR')}</div>
-              <div className="metrica-sub">projeção mês: R$ {projecaoMensal.toLocaleString('pt-BR')}</div>
+        <div style={{ padding: '0 24px 24px' }}>
+          {/* Saudação */}
+          <div style={{ marginBottom: 24 }}>
+            <h1 style={{ fontSize: 24, fontWeight: 600, color: '#0F1419', margin: '0 0 4px' }}>
+              {saudacao}, João
+            </h1>
+            <p style={{ fontSize: 13, color: '#6B7280', margin: 0 }}>
+              {dataFormatada} · {visiveis.length} veículos ativos
+            </p>
+          </div>
+
+          {/* Grid de 4 KPIs */}
+          <div className="kpi-grid">
+            <div className="kpi-card">
+              <div className="label">Economia no mês</div>
+              <div className="valor verde">
+                R$ {(resumoSemana?.perdaSemana ? Math.round(resumoSemana.perdaSemana * 4.3) : 0).toLocaleString('pt-BR')}
+              </div>
+              <div className="sub verde">▲ 12% vs abril</div>
             </div>
-            <div className="metrica">
-              <div className="metrica-label">Em rota agora</div>
-              <div className="metrica-valor">{visiveis.filter(v => v.ignicao).length}<span style={{fontSize:18, color:'#888', fontWeight:400}}> / {visiveis.length}</span></div>
-              <div className="metrica-sub">{alertas} {alertas === 1 ? 'alerta' : 'alertas'} ativo{alertas !== 1 ? 's' : ''}</div>
+
+            <div className="kpi-card">
+              <div className="label">Marcha lenta</div>
+              <div className="valor">
+                {(() => {
+                  const total = visiveis.reduce((s, v) => s + (parseInt(v.parado?.split(' ')[0]) || 0), 0)
+                  return `${total}h`
+                })()}
+              </div>
+              <div className="sub">
+                {(() => {
+                  const total = visiveis.reduce((s, v) => s + (parseInt(v.parado?.split(' ')[0]) || 0), 0)
+                  return total > 30 ? `▲ ${total - 30}h acima da meta` : '✓ dentro da meta'
+                })()}
+              </div>
             </div>
-            <div className="metrica">
-              <div className="metrica-label">Score médio da frota</div>
-              <div className="metrica-valor" style={{color: planoAcao.scoreMedio >= 80 ? '#00C896' : planoAcao.scoreMedio >= 60 ? '#E8B923' : '#D85A30'}}>{planoAcao.scoreMedio}</div>
-              <div className="metrica-sub">{planoAcao.dentroMeta} de {planoAcao.total} na meta</div>
+
+            <div className="kpi-card">
+              <div className="label">Economia potencial</div>
+              <div className="valor verde">
+                R$ {(() => {
+                  const ruins = visiveis.filter(v => {
+                    const score = planoAcao.porPlaca[v.placa]?.score || 95
+                    return score < 70
+                  })
+                  return Math.round(ruins.reduce((s, v) => s + (v.perdaHoje || 0), 0) * 22).toLocaleString('pt-BR')
+                })()}
+              </div>
+              <div className="sub">se eliminar desperdício atual</div>
+            </div>
+
+            <div className="kpi-card">
+              <div className="label">Alertas</div>
+              <div className="valor">
+                {(() => {
+                  const count = visiveis.filter(v => {
+                    const score = planoAcao.porPlaca[v.placa]?.score || 95
+                    return v.alertaTipo || score < 60
+                  }).length
+                  return count
+                })()}
+              </div>
+              <div className="sub">
+                {(() => {
+                  const criticos = visiveis.filter(v => {
+                    const score = planoAcao.porPlaca[v.placa]?.score || 95
+                    return score < 40 || v.alertaTipo === 'critico'
+                  }).length
+                  return `${criticos} críticos pendentes`
+                })()}
+              </div>
             </div>
           </div>
 
-          {/* Prioridade da semana — só aparece se tem alguém pra acompanhar */}
+          {/* Card Agente VEBRAX */}
           {planoAcao.prioridades[0] && (() => {
             const p = planoAcao.prioridades[0]
-            const corBadge = p.score < 40 ? '#D85A30' : p.score < 60 ? '#E8B923' : '#00C896'
             return (
-              <div className="card-box" style={{
-                border: `2px solid ${corBadge}`,
-                marginBottom: '1.25rem',
-                padding: '18px 22px',
-              }}>
-                <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:14, flexWrap:'wrap'}}>
-                  <span style={{
-                    background: corBadge + '22',
-                    color: corBadge,
-                    fontSize: 11,
-                    padding: '3px 10px',
-                    borderRadius: 999,
-                    fontWeight: 600,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                  }}>Prioridade da semana</span>
-                  <span style={{fontSize:13, color:'#666'}}>Maior oportunidade de economia</span>
+              <div className="agente-card">
+                <div className="tag">AGENTE VEBRAX · HÁ {Math.round((agora - ultimaAtualizacao) / 60000)} MIN</div>
+                <h3 style={{ fontSize: 14, color: '#0F1419', margin: '8px 0 6px', fontWeight: 500 }}>
+                  {p.placa} acumulou {p.parado} de marcha lenta hoje
+                </h3>
+                <div className="desc">
+                  {p.oQue.substring(0, 120)}... Custo <strong>R$ {calcPerda(p.paradoMin, config).toFixed(0)}</strong> por incidente.
                 </div>
-
-                <div style={{display:'flex', alignItems:'center', gap:14, marginBottom:14}}>
-                  <div style={{
-                    width: 46, height: 46, borderRadius: '50%',
-                    background: corBadge + '22',
-                    color: corBadge,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontWeight: 600, fontSize: 15,
-                    flexShrink: 0,
-                  }}>{p.iniciais}</div>
-                  <div style={{flex:1, minWidth:0}}>
-                    <div style={{fontSize:16, fontWeight:600}}>{p.motorista}</div>
-                    <div style={{fontSize:12, color:'#666', marginTop:2}}>
-                      Placa {p.placa}
-                    </div>
-                  </div>
-                  <div style={{textAlign:'right'}}>
-                    <div style={{fontSize:28, fontWeight:600, lineHeight:1, color:corBadge}}>{p.score}</div>
-                    <div style={{fontSize:10, color:'#888', marginTop:2}}>de 100</div>
-                  </div>
-                </div>
-
-                <div style={{fontSize:13, lineHeight:1.55, color:'#444', marginBottom:14}}>
-                  <strong style={{color:'#0F1419'}}>Ação sugerida:</strong> {p.acao}
-                </div>
-
-                <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                <div className="acoes">
                   <button
-                    onClick={() => alert(`Conversa com ${p.motorista} marcada como feita!`)}
-                    style={{
-                      flex:'1 1 180px', padding:'10px 14px', fontSize:13, fontWeight:500,
-                      background:'#0F1419', color:'#fff', border:'none', borderRadius:8,
-                      cursor:'pointer',
-                    }}
-                  >
-                    Marcar como conversado
-                  </button>
-                  <button
+                    className="btn-primario"
                     onClick={() => {
-                      const msg = `Olá ${p.motorista.split(' ')[0]}, notei que essa semana o tempo de marcha lenta tá acima da média. Bora alinhar amanhã? Em horários de espera e descarga, sempre desligar o motor reduz nosso custo de combustível bastante. Valeu!`
-                      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
-                    }}
-                    style={{
-                      flex:'1 1 180px', padding:'10px 14px', fontSize:13, fontWeight:500,
-                      background:'#fff', color:'#0F1419', border:'1px solid #ddd', borderRadius:8,
-                      cursor:'pointer',
+                      setSelecionadoAlerta(visiveis.indexOf(v))
+                      setTela('alertas')
                     }}
                   >
-                    Mandar WhatsApp
+                    Ver investigação
+                  </button>
+                  <button className="btn-secundario">
+                    Marcar como justificado
                   </button>
                 </div>
               </div>
             )
           })()}
 
-          {planoAcao.prioridades.length === 0 && planoAcao.total > 0 && (
-            <div className="card-box" style={{marginBottom:'1.25rem', borderLeft:'4px solid #00C896', padding:'14px 18px'}}>
-              <div style={{fontSize:14, fontWeight:600, color:'#00A578'}}>
-                Frota toda dentro da meta nesta semana.
-              </div>
-              <div style={{fontSize:12, color:'#666', marginTop:4}}>
-                Nenhum motorista exige conversa imediata. Continue acompanhando os indicadores.
+          {planoAcao.prioridades.length === 0 && (
+            <div className="agente-card">
+              <div className="tag">AGENTE VEBRAX · MONITORAMENTO ATIVO</div>
+              <h3 style={{ fontSize: 14, color: '#0F1419', margin: '8px 0 6px', fontWeight: 500 }}>
+                ✓ Nenhuma anomalia detectada hoje
+              </h3>
+              <div className="desc">
+                Frota toda operando dentro dos parâmetros de eficiência. Continue acompanhando os indicadores.
               </div>
             </div>
           )}
 
-          {/* Status da frota — cards de veículos, ordenados por score (pior primeiro) */}
-          <div className="secao-titulo">Status da frota</div>
-          <div className="legenda">
-            <span className="leg-item"><span className="dot verde"></span>Normal</span>
-            <span className="leg-item"><span className="dot amarelo"></span>Atenção</span>
-            <span className="leg-item"><span className="dot vermelho"></span>Crítico</span>
-          </div>
-          <div className="frota-grid">
-            {[...visiveis].sort((a, b) => {
-              const sa = planoAcao.ranking.find(r => r.placa === a.placa)?.score ?? 95
-              const sb = planoAcao.ranking.find(r => r.placa === b.placa)?.score ?? 95
-              return sa - sb
-            }).map((ve) => {
-              const idx = veiculos.indexOf(ve)
-              const score = planoAcao.ranking.find(r => r.placa === ve.placa)?.score ?? 95
-              const corScore = score >= 80 ? '#00C896' : score >= 60 ? '#E8B923' : '#D85A30'
-              return (
-                <div
-                  key={ve.placa}
-                  className={`card-veiculo ${ve.status} ${idx === selecionado ? 'selecionado' : ''}`}
-                  onClick={() => setSelecionado(idx)}
-                  style={{position: 'relative'}}
-                >
-                  {/* Score no canto superior direito */}
-                  <div style={{
-                    position: 'absolute', top: 10, right: 12,
-                    fontSize: 16, fontWeight: 700, color: corScore,
-                    lineHeight: 1,
-                  }}>
-                    {score}
-                    <span style={{fontSize: 9, color: '#999', fontWeight: 400, marginLeft: 2}}>/100</span>
-                  </div>
-                  <div className="cv-placa">{ve.placa}</div>
-                  <div className="cv-motorista">{ve.motorista}</div>
-                  <div className="cv-carreta">Carreta: {ve.carreta}</div>
-                  <div className="cv-status">
-                    <span className={`dot ${ve.status}`}></span>
-                    <span className="cv-status-txt">{ve.statusTxt}</span>
-                  </div>
-                  <div className={`ignicao ${ve.ignicao ? 'on' : 'off'}`}>
-                    {ve.ignicao ? '● ligada' : '○ desligada'}
-                  </div>
-                  {ve.paradoMin > 0 && (
-                    <div style={{
-                      fontSize: 11, color: '#888', marginTop: 6,
-                      paddingTop: 6, borderTop: '1px solid #eee',
-                    }}>
-                      Parado: <strong style={{color: '#0F1419'}}>{ve.parado}</strong> · Perda hoje: <strong style={{color: '#D85A30'}}>R$ {calcPerda(ve.paradoMin).toFixed(0)}</strong>
-                    </div>
-                  )}
-                  {((ve.excessoVelMin || 0) > 0 || (ve.kmDesvio || 0) > 4) && (
-                    <div style={{
-                      fontSize: 11, color: '#888', marginTop: 4,
-                    }}>
-                      {(ve.excessoVelMin || 0) > 0 && (
-                        <span>Pico <strong style={{color: '#D85A30'}}>{ve.velMax} km/h</strong></span>
-                      )}
-                      {(ve.excessoVelMin || 0) > 0 && (ve.kmDesvio || 0) > 4 && ' · '}
-                      {(ve.kmDesvio || 0) > 4 && (
-                        <span><strong style={{color: '#D85A30'}}>{ve.kmDesvio} km</strong> fora da rota</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Detalhe do veículo selecionado — só aparece se há um veículo selecionado e ele está no filtro */}
-          {visiveis.includes(v) && (
-            <>
-              <div className="detalhe-painel">
-                <div className="det-topo">
-                  <div><div className="det-titulo">{v.placa}</div><div className="det-sub">Motorista: {v.motorista}</div></div>
-                  <span className={`badge ${v.status}`}>{v.statusTxt}</span>
-                </div>
-                <div className="det-grid">
-                  <div className="det-item"><div className="det-label">Velocidade atual</div><div className="det-valor">{v.vel}</div></div>
-                  <div className="det-item"><div className="det-label">Ignição</div><div className={`det-valor ${v.ignicao ? 'alerta' : ''}`}>{v.ignicao ? 'Ligada' : 'Desligada'}</div></div>
-                  <div className="det-item"><div className="det-label">Tempo parado ligado</div><div className="det-valor alerta">{v.parado}</div></div>
-                  <div className="det-item"><div className="det-label">Perda estimada</div><div className="det-valor alerta">R$ {calcPerda(v.paradoMin).toFixed(2)}</div></div>
-                  <div className="det-item">
-                    <div className="det-label">Pico do dia</div>
-                    <div className={`det-valor ${(v.velMax || 0) > (v.limiteVel || 90) ? 'alerta' : ''}`}>
-                      {v.velMax || 0} km/h
-                    </div>
-                  </div>
-                  <div className="det-item">
-                    <div className="det-label">Excesso de velocidade</div>
-                    <div className={`det-valor ${(v.excessoVelMin || 0) > 0 ? 'alerta' : ''}`}>
-                      {v.excessoVelMin > 0 ? `${v.excessoVelMin} min acima de ${v.limiteVel} km/h` : 'sem excesso'}
-                    </div>
-                  </div>
-                  <div className="det-item">
-                    <div className="det-label">Desvio da rota</div>
-                    <div className={`det-valor ${(v.kmDesvio || 0) > 8 ? 'alerta' : ''}`}>
-                      {v.kmDesvio > 0 ? `${v.kmDesvio} km fora` : 'rota seguida'}
-                    </div>
-                  </div>
-                </div>
-                {v.alertaTipo && (
-                  <div className={`alerta-box ${v.alertaTipo}`}>
-                    <div className="alerta-icone">⚠</div>
-                    <div><div className="alerta-titulo">{v.alertaTitulo}</div><div className="alerta-desc">{v.alertaDesc}</div></div>
-                  </div>
-                )}
-
-                {/* Plano de ação específico desse motorista — sempre aparece, com tom variando pelo score */}
-                {planoAcao.porPlaca[v.placa] && (() => {
-                  const p = planoAcao.porPlaca[v.placa]
-                  const cor = p.score >= 80 ? '#00C896' : p.score >= 60 ? '#E8B923' : p.score >= 40 ? '#E89923' : '#D85A30'
-                  const fundo = p.score >= 80 ? '#F0F8F4' : p.score >= 60 ? '#FFFAEB' : p.score >= 40 ? '#FFF4E5' : '#FDEBE3'
-                  const titulo = p.nivel === 'critico' ? 'Ação imediata necessária'
-                              : p.nivel === 'atencao' ? 'Atenção — acompanhar'
-                              : p.nivel === 'observar' ? 'Observação — leve aumento'
-                              : 'Reconhecimento — bom desempenho'
+          {/* Tabela Frota */}
+          <div className="tabela-frota-card">
+            <div className="head">
+              <h3>Frota — desempenho de hoje</h3>
+              <button style={{
+                fontSize: 12,
+                color: '#00C896',
+                fontWeight: 500,
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer'
+              }}>
+                Filtrar ▾
+              </button>
+            </div>
+            <table className="tabela-frota">
+              <thead>
+                <tr>
+                  <th>PLACA</th>
+                  <th>STATUS</th>
+                  <th>KM HOJE</th>
+                  <th>MARCHA LENTA</th>
+                  <th>ECONOMIA</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visiveis.slice(0, 5).map((ve, idx) => {
+                  const score = planoAcao.porPlaca[ve.placa]?.score || 95
+                  const statusPill = ve.ignicao && score >= 70 ? 'EM ROTA' : score < 60 ? 'ATENÇÃO' : 'PARADO'
+                  const corPill = statusPill === 'EM ROTA' ? '#00C896' : statusPill === 'ATENÇÃO' ? '#C03A3A' : '#6B7280'
                   return (
-                    <div style={{
-                      background: fundo,
-                      borderLeft: `4px solid ${cor}`,
-                      borderRadius: 6,
-                      padding: '14px 18px',
-                      marginTop: 14,
-                    }}>
+                    <tr key={ve.placa} className={score < 60 ? 'atencao' : ''}>
+                      <td>{ve.placa}</td>
+                      <td>
+                        <span className={`pill ${statusPill.toLowerCase().replace(' ', '-')}`}>
+                          {statusPill}
+                        </span>
+                      </td>
+                      <td className="num">{ve.km}</td>
+                      <td className={parseInt(ve.parado) > 120 ? 'vermelho' : ''}>{ve.parado}</td>
+                      <td className={score >= 70 ? 'verde' : 'vermelho'}>
+                        {score >= 70 ? '+' : '−'} R$ {calcPerda(ve.paradoMin, config).toFixed(0)}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            <div className="ver-todos" onClick={() => setTela('veiculos')}>
+              Ver os 16 veículos →
+            </div>
+          </div>
+
+          {/* Ranking de motoristas */}
+          <div className="ranking-card">
+            <h3>Ranking de motoristas — quem mais custa nesse mês</h3>
+            <div className="subt">Top 5 com maior perda projetada — soma de marcha lenta + excessos + km fora de rota</div>
+            {planoAcao.ranking.slice(0, 5).map((p, i) => (
+              <div key={p.placa} className="ranking-row">
+                <div className="ranking-pos">{i + 1}</div>
+                <div className="ranking-avatar">{p.iniciais}</div>
+                <div className="ranking-nome">{p.motorista}</div>
+                <div className="ranking-placa">{p.placa}</div>
+                <div className="ranking-tempo">{p.parado}</div>
+                <div className="ranking-custo">R$ {Math.round(p.perdaHoje * 22)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* TELA VEÍCULOS */}
+      {tela === 'veiculos' && (
+        <div style={{ padding: '0 24px 24px' }}>
+          {selecionado === null ? (
+            <>
+              <div style={{ marginBottom: 24 }}>
+                <h2 style={{ fontSize: 18, fontWeight: 600, color: '#0F1419', margin: 0 }}>
+                  Veículos
+                </h2>
+              </div>
+              <div className="frota-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
+                {visiveis.map((ve, idx) => {
+                  const score = planoAcao.porPlaca[ve.placa]?.score || 95
+                  const corScore = score >= 80 ? '#00C896' : score >= 60 ? '#E8B923' : '#D85A30'
+                  return (
+                    <div
+                      key={ve.placa}
+                      className={`card-veiculo ${ve.status}`}
+                      onClick={() => setSelecionado(visiveis.indexOf(ve))}
+                      style={{ position: 'relative', cursor: 'pointer' }}
+                    >
                       <div style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        marginBottom: 10, flexWrap: 'wrap', gap: 8,
+                        position: 'absolute', top: 10, right: 12,
+                        fontSize: 16, fontWeight: 700, color: corScore,
                       }}>
-                        <div style={{fontSize: 13, fontWeight: 700, color: cor, textTransform: 'uppercase', letterSpacing: '0.5px'}}>
-                          Plano de ação · {titulo}
-                        </div>
-                        <div style={{display: 'flex', alignItems: 'center', gap: 6}}>
-                          <span style={{fontSize: 11, color: '#888'}}>Score</span>
-                          <span style={{fontSize: 18, fontWeight: 700, color: cor}}>{p.score}</span>
-                          <span style={{fontSize: 10, color: '#999'}}>/100</span>
-                        </div>
+                        {score}<span style={{fontSize: 9, color: '#999', fontWeight: 400, marginLeft: 2}}>/100</span>
                       </div>
-
-                      <div style={{marginBottom: 10}}>
-                        <div style={{fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4}}>
-                          O que aconteceu
-                        </div>
-                        <div style={{fontSize: 13, lineHeight: 1.5, color: '#0F1419'}}>{p.oQue}</div>
+                      <div className="cv-placa">{ve.placa}</div>
+                      <div className="cv-motorista">{ve.motorista}</div>
+                      <div className="cv-carreta">Carreta: {ve.carreta}</div>
+                      <div className="cv-status">
+                        <span className={`dot ${ve.status}`}></span>
+                        <span className="cv-status-txt">{ve.statusTxt}</span>
                       </div>
-
-                      <div style={{marginBottom: 10}}>
-                        <div style={{fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4}}>
-                          Ação sugerida
-                        </div>
-                        <div style={{fontSize: 13, lineHeight: 1.5, color: '#0F1419'}}>{p.acao}</div>
+                      <div className={`ignicao ${ve.ignicao ? 'on' : 'off'}`}>
+                        {ve.ignicao ? '● ligada' : '○ desligada'}
                       </div>
-
-                      <div style={{
-                        background: '#fff',
-                        borderRadius: 6,
-                        padding: '10px 12px',
-                        marginBottom: 12,
-                        borderLeft: `2px solid ${cor}`,
-                      }}>
-                        <div style={{fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4}}>
-                          Exemplo de conversa
+                      {ve.paradoMin > 0 && (
+                        <div style={{
+                          fontSize: 11, color: '#888', marginTop: 6,
+                          paddingTop: 6, borderTop: '1px solid #eee',
+                        }}>
+                          Parado: <strong>{ve.parado}</strong> · Perda: <strong style={{color: '#D85A30'}}>R$ {calcPerda(ve.paradoMin, config).toFixed(0)}</strong>
                         </div>
-                        <div style={{fontSize: 12, lineHeight: 1.55, color: '#444', fontStyle: 'italic'}}>
-                          {p.exemplo}
-                        </div>
-                      </div>
-
-                      {p.nivel !== 'ok' ? (
-                        <div style={{display: 'flex', gap: 8, flexWrap: 'wrap'}}>
-                          <button
-                            onClick={() => alert(`Conversa com ${v.motorista} marcada como feita!`)}
-                            style={{
-                              flex: '1 1 160px', padding: '9px 12px', fontSize: 12, fontWeight: 500,
-                              background: '#0F1419', color: '#fff', border: 'none', borderRadius: 6,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Marcar como conversado
-                          </button>
-                          <button
-                            onClick={() => {
-                              const primNome = v.motorista.split(' ')[0]
-                              const msg = p.nivel === 'critico'
-                                ? `Olá ${primNome}, precisamos conversar sobre o consumo essa semana. Vi que o motor ficou ligado ${v.parado} parado. Bora alinhar amanhã pra reduzir? Cada hora de marcha lenta custa caro. Valeu!`
-                                : p.nivel === 'atencao'
-                                  ? `Olá ${primNome}, notei um aumento no tempo de marcha lenta essa semana (${v.parado}). Tá tudo ok aí? Algum problema operacional? Bora alinhar pra voltar pro padrão. Valeu!`
-                                  : `Oi ${primNome}, só um lembrete rápido: tenta desligar o motor sempre que parar mais de 5min, beleza? Tá indo bem, é só pra manter o consumo baixo. Valeu!`
-                              window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
-                            }}
-                            style={{
-                              flex: '1 1 160px', padding: '9px 12px', fontSize: 12, fontWeight: 500,
-                              background: '#fff', color: '#0F1419', border: '1px solid #ddd', borderRadius: 6,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Mandar WhatsApp
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            const primNome = v.motorista.split(' ')[0]
-                            const msg = `Oi ${primNome}, parabéns pela semana! Você tá entre os melhores da frota em consumo. Continua assim, tá fazendo a diferença. Valeu!`
-                            window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
-                          }}
-                          style={{
-                            width: '100%', padding: '9px 12px', fontSize: 12, fontWeight: 500,
-                            background: '#00C896', color: '#fff', border: 'none', borderRadius: 6,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Mandar elogio no WhatsApp
-                        </button>
                       )}
                     </div>
                   )
-                })()}
-
-                <div className="mapa-placeholder">Mapa da rota · {v.rota}</div>
+                })}
+              </div>
+            </>
+          ) : (
+            <>
+              <button
+                className="detalhe-volta"
+                onClick={() => setSelecionado(null)}
+              >
+                ← Veículos
+              </button>
+              <div className="detalhe-titulo">
+                <h2>{v?.placa}</h2>
+                <span className={`pill ${v?.status?.toLowerCase()}`}>
+                  {v?.statusTxt}
+                </span>
+              </div>
+              <div className="detalhe-sub">
+                {v?.modelo} · Motorista: {v?.motorista} · {v?.rota || 'BR-277 km 142'}
               </div>
 
-              {v.viagens && v.viagens.length > 0 && (
-                <>
-                  <div className="secao-titulo" style={{marginBottom:'10px'}}>
-                    Viagens do dia — {v.viagens.length}{' '}
-                    {v.viagens.length === 1 ? 'viagem' : 'viagens'}
-                    {' · '}
-                    {v.viagens.reduce((s, vg) => s + (vg.distanciaKm || 0), 0)} km
+              {/* 4 KPI Cards */}
+              <div className="kpi-grid">
+                <div className="kpi-card">
+                  <div className="label">Rodagem (maio)</div>
+                  <div className="valor">
+                    {Math.round((parseInt(v?.km?.replace(/\D/g, '') || 0) * 22))} km
                   </div>
-                  <div style={{display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24}}>
-                    {v.viagens.map((vg, i) => {
-                      const fmtDur = (m) => {
-                        const h = Math.floor(m / 60), mm = m % 60
-                        return h > 0 ? `${h}h ${mm}min` : `${mm} min`
-                      }
-                      const limpa = vg.excessos.length === 0 && vg.freadas === 0 && vg.aceleracoes === 0
-                      const corBorda = limpa ? '#00C896' : vg.excessos.length > 0 ? '#E55B3C' : '#D9A21B'
-                      return (
-                        <div key={i} style={{
-                          padding: '14px 16px',
-                          background: '#fff',
-                          border: `1px solid ${corBorda}33`,
-                          borderLeft: `4px solid ${corBorda}`,
-                          borderRadius: 8,
-                        }}>
-                          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6}}>
-                            <div style={{fontSize: 14, fontWeight: 600, color: '#222'}}>
-                              Viagem {i + 1} · {vg.inicio.hora} → {vg.fim.hora}
-                            </div>
-                            {vg.emAndamento && (
-                              <span style={{
-                                fontSize: 11, fontWeight: 600, padding: '3px 8px',
-                                background: '#00C89622', color: '#00C896', borderRadius: 12,
-                              }}>EM ANDAMENTO</span>
-                            )}
-                          </div>
-                          <div style={{fontSize: 13, color: '#333', marginBottom: 4}}>
-                            {vg.inicio.local} → {vg.fim.local}
-                          </div>
-                          <div style={{fontSize: 12, color: '#666', marginBottom: 8}}>
-                            {vg.distanciaKm} km · {fmtDur(vg.duracaoMin)} ·
-                            {' '}vel. média {vg.velMedia} km/h · pico {vg.velMax} km/h
-                          </div>
-                          <div style={{display: 'flex', flexWrap: 'wrap', gap: 8, fontSize: 12}}>
-                            {vg.excessos.length > 0 && (
-                              <span style={{color: '#E55B3C'}}>
-                                ⚠ {vg.excessos.length} excesso{vg.excessos.length > 1 ? 's' : ''} (pico {Math.max(...vg.excessos.map(e => e.velPico))} km/h)
-                              </span>
-                            )}
-                            {vg.paradas.length > 0 && (
-                              <span style={{color: '#D9A21B'}}>
-                                ⏸ {vg.paradas.length} parada{vg.paradas.length > 1 ? 's' : ''} ({vg.paradas.reduce((s, p) => s + p.duracaoMin, 0)} min)
-                              </span>
-                            )}
-                            {vg.freadas > 0 && (
-                              <span style={{color: '#E55B3C'}}>🔻 {vg.freadas} frenagem{vg.freadas > 1 ? 's' : ''}</span>
-                            )}
-                            {vg.aceleracoes > 0 && (
-                              <span style={{color: '#E55B3C'}}>🔺 {vg.aceleracoes} aceleração{vg.aceleracoes > 1 ? 'ões' : ''}</span>
-                            )}
-                            {limpa && (
-                              <span style={{color: '#00C896'}}>✓ Sem ocorrências</span>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </>
-              )}
+                  <div className="sub">22 dias úteis</div>
+                </div>
 
-              {(() => {
-                const totalImpacto = v.diario.reduce((s, d) => s + (Number(d.custo) || 0), 0)
-                return (
-                  <div className="secao-titulo" style={{marginBottom:'10px'}}>
-                    Ocorrências do dia — {v.placa}
-                    {totalImpacto > 0 && (
-                      <span style={{marginLeft:8, fontSize:13, color:'#E55B3C', fontWeight:700}}>
-                        · prejuízo R$ {totalImpacto.toFixed(2).replace('.',',')}
-                      </span>
-                    )}
+                <div className="kpi-card">
+                  <div className="label">Marcha lenta</div>
+                  <div className="valor">{v?.parado}</div>
+                  <div className="sub">▼ 15% vs abril</div>
+                </div>
+
+                <div className="kpi-card">
+                  <div className="label">Economia gerada</div>
+                  <div className="valor verde">
+                    R$ {Math.round(calcPerda(v?.paradoMin || 0, config) * 22 * ((planoAcao.porPlaca[v?.placa]?.score || 95) / 100))}
                   </div>
-                )
-              })()}
-              <div className="diario">
-                {v.diario.map((d, i) => (
-                  <div key={i} className="diario-linha">
-                    <div className="d-hora">{d.h}</div>
-                    <div className="d-dot" style={{background: d.cor}}></div>
-                    <div>
-                      <div className="d-evento">{d.ev}</div>
-                      <div className="d-detalhe">{d.det}</div>
+                  <div className="sub">no mês</div>
+                </div>
+
+                <div className="kpi-card">
+                  <div className="label">Score operacional</div>
+                  <div className="valor">
+                    {planoAcao.porPlaca[v?.placa]?.score || 95}/100
+                  </div>
+                  <div className="sub">
+                    {(planoAcao.porPlaca[v?.placa]?.score || 95) > planoAcao.scoreMedio ? 'acima da frota' : 'abaixo da frota'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Gráfico de economia */}
+              <div className="grafico-card">
+                <div className="head">
+                  <h3>Economia diária — últimos 14 dias</h3>
+                  <span className="total">total acumulado: R$ {Math.round(calcPerda(v?.paradoMin || 0, config) * 14)}</span>
+                </div>
+                <svg viewBox="0 0 600 140" style={{ width: '100%', height: 140 }}>
+                  {[...Array(14)].map((_, i) => {
+                    const score = (planoAcao.porPlaca[v?.placa]?.score || 95) + Math.random() * 20 - 10
+                    const height = Math.max(10, (score / 100) * 100 + (i % 3) * 8)
+                    const x = 30 + i * 40
+                    const y = 120 - height
+                    return (
+                      <rect
+                        key={i}
+                        x={x}
+                        y={y}
+                        width={30}
+                        height={height}
+                        fill="#00C896"
+                        rx={2}
+                      />
+                    )
+                  })}
+                </svg>
+              </div>
+
+              {/* Eventos recentes */}
+              <div className="eventos-card">
+                <h3>Eventos recentes</h3>
+                {v?.diario?.map((ev, i) => (
+                  <div key={i} className="evento-item">
+                    <div className="evento-info">
+                      <div className="evento-dot" style={{ background: ev.cor }}></div>
+                      <div>
+                        <div className="evento-titulo">{ev.ev}</div>
+                        <div className="evento-sub">{ev.h} · {ev.det}</div>
+                      </div>
                     </div>
+                    {ev.custo && <div className="evento-valor">R$ {ev.custo}</div>}
                   </div>
                 ))}
               </div>
             </>
           )}
-        </>
+        </div>
       )}
 
-      {tela === 'relatorio' && (() => {
-        const modoDia = !!(resumoSemana && resumoSemana.modoDia)
-        const dataLabel = (() => {
-          if (!dataConsulta) return ''
-          const [, mm, dd] = dataConsulta.split('-')
-          return `${dd}/${mm}`
-        })()
-        const tituloResumo = modoDia
-          ? (dataConsulta
-              ? (frotaFiltro === 'Todas'
-                  ? `Resumo da frota — ${dataLabel}`
-                  : `Resumo do veículo ${frotaFiltro} — ${dataLabel}`)
-              : `Resumo do veículo ${frotaFiltro} — hoje`)
-          : 'Resumo semanal da frota'
-        const subPeriodo = modoDia ? (dataConsulta ? `em ${dataLabel}` : 'hoje') : 'esta semana'
-        const tituloPerda = modoDia ? 'Perda no dia' : 'Perda total semana'
-        const subMedia = modoDia ? subPeriodo : 'por semana'
-        return (
-        <>
-          <div className="secao-titulo" style={{marginBottom:'1rem'}}>{tituloResumo}</div>
-          <div className="resumo-grid" style={{marginBottom:'1.5rem'}}>
-            <div className="metrica">
-              <div className="metrica-label">Total de viagens</div>
-              <div className="metrica-valor">{resumoSemana ? resumoSemana.totalViagens : '—'}</div>
-              <div className="metrica-sub">{resumoSemana ? subPeriodo : 'aguardando ONIXSAT'}</div>
+      {/* TELA ALERTAS */}
+      {tela === 'alertas' && (
+        <div style={{ padding: '0 24px 24px' }}>
+          {selecionadoAlerta === null ? (
+            <>
+              <h2 style={{ fontSize: 18, fontWeight: 600, color: '#0F1419', margin: '0 0 4px' }}>
+                Alertas abertos
+              </h2>
+              <p style={{ fontSize: 12, color: '#6B7280', margin: '0 0 20px' }}>
+                {(() => {
+                  const count = visiveis.filter(v => v.alertaTipo || (planoAcao.porPlaca[v.placa]?.score || 95) < 60).length
+                  return `${count} investigações ativas`
+                })()}
+              </p>
+
+              <div className="tabela-frota-card">
+                <table className="tabela-frota">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>VEÍCULO</th>
+                      <th>DESCRIÇÃO</th>
+                      <th>SEVERIDADE</th>
+                      <th>ABERTO HÁ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visiveis.filter(v => v.alertaTipo || (planoAcao.porPlaca[v.placa]?.score || 95) < 60).map((ve, idx) => {
+                      const score = planoAcao.porPlaca[ve.placa]?.score || 95
+                      const sevPill = score < 40 ? 'vermelho' : score < 60 ? 'amarelo' : 'verde'
+                      return (
+                        <tr
+                          key={ve.placa}
+                          onClick={() => setSelecionadoAlerta(visiveis.indexOf(ve))}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <td>INV-{2100 + idx}</td>
+                          <td>{ve.placa}</td>
+                          <td>{ve.alertaDesc || 'Marcha lenta atípica'}</td>
+                          <td>
+                            <span className={`pill ${sevPill}`}>
+                              {sevPill.toUpperCase()}
+                            </span>
+                          </td>
+                          <td>há 2 horas</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <>
+              <button
+                className="detalhe-volta"
+                onClick={() => setSelecionadoAlerta(null)}
+              >
+                ← Alertas / Investigação #INV-{2100 + selecionadoAlerta}
+              </button>
+              {(() => {
+                const idx = selecionadoAlerta
+                const ve = visiveis[idx]
+                if (!ve) return null
+                const score = planoAcao.porPlaca[ve.placa]?.score || 95
+
+                return (
+                  <>
+                    <div className="detalhe-titulo">
+                      <h2>{ve.placa} — {ve.alertaTitulo || 'marcha lenta atípica'}</h2>
+                    </div>
+                    <div className="detalhe-sub">
+                      Detectado pelo Agente VEBRAX · {dataFormatada.split(',')[0]} · {agora.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}
+                    </div>
+
+                    {/* 3 KPI Cards */}
+                    <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+                      <div className="kpi-card">
+                        <div className="label">Marcha lenta hoje</div>
+                        <div className="valor vermelho">{ve.parado}</div>
+                        <div className="sub">média: 1h 42min</div>
+                      </div>
+
+                      <div className="kpi-card">
+                        <div className="label">Diesel queimado</div>
+                        <div className="valor">
+                          {Math.round((ve.paradoMin / 60) * config.consumoParado)} L
+                        </div>
+                        <div className="sub">parado, motor ligado</div>
+                      </div>
+
+                      <div className="kpi-card">
+                        <div className="label">Custo estimado</div>
+                        <div className="valor vermelho">
+                          R$ {calcPerda(ve.paradoMin, config).toFixed(0)}
+                        </div>
+                        <div className="sub">a R$ {config.precoDiesel}/L</div>
+                      </div>
+                    </div>
+
+                    {/* Hipótese do agente */}
+                    <div style={{
+                      background: '#fff',
+                      borderRadius: 8,
+                      padding: 18,
+                      marginBottom: 18,
+                      border: '1px solid #ECEEF1'
+                    }}>
+                      <h3 style={{ fontSize: 13, fontWeight: 500, color: '#0F1419', margin: '0 0 12px' }}>
+                        Hipótese do agente
+                      </h3>
+                      <p style={{ fontSize: 12, lineHeight: 1.6, color: '#4A5159', margin: '0 0 12px' }}>
+                        Veículo permaneceu por <strong>{Math.round(ve.paradoMin / 60)}h</strong> em coordenada fora da rota planejada ({ve.rota || 'BR-277 km 142'}). Motor permaneceu ligado durante <strong>82% do período</strong>.
+                      </p>
+                      <div style={{
+                        background: '#F1F2F4',
+                        borderRadius: 6,
+                        padding: 12,
+                        fontSize: 12,
+                        lineHeight: 1.5,
+                        color: '#4A5159'
+                      }}>
+                        <strong style={{ color: '#0F1419' }}>Recomendação:</strong> verificar com motorista ({iniciaisDe(ve.motorista)}) se houve orientação para manter motor ligado. Custo recuperável <strong>R$ {calcPerda(ve.paradoMin, config).toFixed(0)}/incidente</strong> · projeção mensal <strong>R$ {Math.round(calcPerda(ve.paradoMin, config) * 6)}</strong> se padrão se repetir.
+                      </div>
+                    </div>
+
+                    {/* Timeline */}
+                    <div style={{
+                      background: '#fff',
+                      borderRadius: 8,
+                      padding: 18,
+                      marginBottom: 18,
+                      border: '1px solid #ECEEF1'
+                    }}>
+                      <h3 style={{ fontSize: 13, fontWeight: 500, color: '#0F1419', margin: '0 0 14px' }}>
+                        Linha do tempo · {dataFormatada.split(',')[0]}
+                      </h3>
+                      {ve.diario?.map((ev, i) => (
+                        <div key={i} className="timeline-row">
+                          <div className="timeline-hora">{ev.h}</div>
+                          <div className="timeline-dot" style={{ background: ev.cor }}></div>
+                          <div style={{ fontSize: 12, color: '#0F1419' }}>{ev.ev}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Botões */}
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button className="btn-primario">Notificar motorista</button>
+                      <button className="btn-secundario">Marcar como justificado</button>
+                      <button className="btn-secundario">Exportar relatório</button>
+                    </div>
+                  </>
+                )
+              })()}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* TELA RELATÓRIOS */}
+      {tela === 'relatorio' && (
+        <div style={{ padding: '0 24px 24px' }}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, color: '#0F1419', margin: '0 0 20px' }}>
+            Relatórios
+          </h2>
+
+          {/* 4 KPIs agregados */}
+          <div className="kpi-grid">
+            <div className="kpi-card">
+              <div className="label">Total de viagens</div>
+              <div className="valor">{resumoSemana?.totalViagens || '—'}</div>
+              <div className="sub">{dataConsulta ? 'hoje' : 'esta semana'}</div>
             </div>
-            <div className="metrica">
-              <div className="metrica-label">KM total rodado</div>
-              <div className="metrica-valor">{resumoSemana ? `${resumoSemana.kmTotalSemana.toLocaleString('pt-BR')} km` : '—'}</div>
-              <div className="metrica-sub">{resumoSemana ? subPeriodo : 'aguardando ONIXSAT'}</div>
+
+            <div className="kpi-card">
+              <div className="label">KM total rodado</div>
+              <div className="valor">
+                {resumoSemana ? `${resumoSemana.kmTotalSemana.toLocaleString('pt-BR')} km` : '—'}
+              </div>
+              <div className="sub">{dataConsulta ? 'hoje' : 'esta semana'}</div>
             </div>
-            <div className="metrica">
-              <div className="metrica-label">{tituloPerda}</div>
-              <div className="metrica-valor alerta">R$ {resumoSemana ? resumoSemana.perdaSemana.toLocaleString('pt-BR') : '0'}</div>
-              <div className="metrica-sub">em marcha lenta</div>
+
+            <div className="kpi-card">
+              <div className="label">{dataConsulta ? 'Perda no dia' : 'Perda total semana'}</div>
+              <div className="valor vermelho">
+                R$ {resumoSemana ? resumoSemana.perdaSemana.toLocaleString('pt-BR') : '0'}
+              </div>
+              <div className="sub">em marcha lenta</div>
             </div>
-            <div className="metrica">
-              <div className="metrica-label">Média por veículo</div>
-              <div className="metrica-valor alerta">R$ {resumoSemana ? resumoSemana.mediaPorVeiculo.toLocaleString('pt-BR') : '0'}</div>
-              <div className="metrica-sub">{subMedia}</div>
+
+            <div className="kpi-card">
+              <div className="label">Média por veículo</div>
+              <div className="valor vermelho">
+                R$ {resumoSemana ? resumoSemana.mediaPorVeiculo.toLocaleString('pt-BR') : '0'}
+              </div>
+              <div className="sub">{dataConsulta ? 'por dia' : 'por semana'}</div>
             </div>
           </div>
 
-          {!modoDia && (
-            <div className="card-box" style={{marginBottom:'1.5rem'}}>
-              <div className="secao-titulo">Desempenho por dia — esta semana</div>
-              <div className="grafico-semana">
-                {(resumoSemana ? resumoSemana.dias : semana.map(d => ({dia: d, valor: 0}))).map((d, i) => {
+          {/* Gráfico semana */}
+          {!dataConsulta && (
+            <div className="grafico-card">
+              <h3>Desempenho por dia — esta semana</h3>
+              <svg viewBox="0 0 600 140" style={{ width: '100%', height: 140 }}>
+                {(resumoSemana?.dias || semana.map(d => ({dia: d, valor: 0}))).map((d, i) => {
                   const max = resumoSemana ? Math.max(...resumoSemana.dias.map(x => x.valor), 1) : 1
-                  const altura = resumoSemana ? Math.max(4, Math.round((d.valor / max) * 100)) : 4
-                  const isHoje = i === ((new Date().getDay() + 6) % 7) // converte Dom=0 → Seg=0
+                  const height = resumoSemana ? Math.max(10, Math.round((d.valor / max) * 100)) : 10
+                  const isHoje = i === ((new Date().getDay() + 6) % 7)
+                  const x = 40 + i * 75
                   return (
-                    <div key={d.dia} className="grafico-col">
-                      <div className="grafico-barra-wrap" style={{height: 110, display: 'flex', alignItems: 'flex-end', justifyContent: 'center'}}>
-                        <div
-                          className="grafico-barra"
-                          style={{
-                            height: `${altura}px`,
-                            width: '70%',
-                            background: d.valor === 0 ? '#f0f0f0' : (isHoje ? '#00C896' : '#D85A30'),
-                            borderRadius: '4px 4px 0 0',
-                            transition: 'height .3s ease',
-                          }}
-                        ></div>
-                      </div>
-                      <div className="grafico-label" style={{fontWeight: isHoje ? 600 : 400}}>{d.dia}</div>
-                      <div className="grafico-valor">R$ {d.valor.toLocaleString('pt-BR')}</div>
-                    </div>
+                    <g key={d.dia}>
+                      <rect
+                        x={x}
+                        y={120 - height}
+                        width={50}
+                        height={height}
+                        fill={d.valor === 0 ? '#f0f0f0' : (isHoje ? '#00C896' : '#D85A30')}
+                        rx={2}
+                      />
+                      <text x={x + 25} y={135} fontSize="12" fill="#6B7280" textAnchor="middle">
+                        {d.dia}
+                      </text>
+                    </g>
                   )
                 })}
-              </div>
+              </svg>
             </div>
           )}
 
-          <div className="card-box">
-            <div className="secao-titulo">
-              {frotaFiltro === 'Todas'
-                ? `Relatório por veículo — ${modoDia ? subPeriodo : 'semana'}`
-                : `Relatório do veículo — ${frotaFiltro}`}
+          {/* Tabela por veículo */}
+          <div className="tabela-frota-card" style={{ marginTop: 24 }}>
+            <div className="head">
+              <h3>Relatório por veículo — {dataConsulta ? 'hoje' : 'semana'}</h3>
             </div>
-            {visiveis.length === 0 ? (
-              <div className="vazio">Nenhum veículo corresponde ao filtro</div>
-            ) : (
-              <table className="tabela">
-                <thead>
-                  <tr>
-                    <th>Cavalo</th>
-                    <th>Carreta</th>
-                    <th>Motorista</th>
-                    <th>KM rodado</th>
-                    <th>Tempo parado</th>
-                    <th>Perda estimada</th>
-                    <th>Status</th>
+            <table className="tabela-frota">
+              <thead>
+                <tr>
+                  <th>PLACA</th>
+                  <th>MOTORISTA</th>
+                  <th>KM</th>
+                  <th>PARADO</th>
+                  <th>PERDA</th>
+                  <th>STATUS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visiveis.map(ve => (
+                  <tr key={ve.placa}>
+                    <td className="td-placa">{ve.placa}</td>
+                    <td>{ve.motorista}</td>
+                    <td>{ve.km}</td>
+                    <td>{ve.parado}</td>
+                    <td className="td-perda">R$ {calcPerda(ve.paradoMin, config).toFixed(2)}</td>
+                    <td>
+                      <span className={`pill ${ve.status?.toLowerCase()}`}>
+                        {ve.statusTxt}
+                      </span>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {visiveis.map(ve => (
-                    <tr key={ve.placa}>
-                      <td className="td-placa">{ve.placa}</td>
-                      <td>{ve.carreta}</td>
-                      <td>{ve.motorista}</td>
-                      <td>{ve.km}</td>
-                      <td>{ve.parado}</td>
-                      <td className="td-perda">R$ {calcPerda(ve.paradoMin).toFixed(2)}</td>
-                      <td><span className={`badge ${ve.status}`}>{ve.statusTxt}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+                ))}
+              </tbody>
+            </table>
           </div>
-        </>
-        )
-      })()}
+        </div>
+      )}
 
+      {/* TELA CONFIGURAÇÕES */}
       {tela === 'config' && (
-        <>
-          <div className="secao-titulo" style={{marginBottom:'1rem'}}>Configurações da operação</div>
+        <div style={{ padding: '0 24px 24px' }}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, color: '#0F1419', margin: '0 0 20px' }}>
+            Configurações da operação
+          </h2>
+
           <div className="dois-col">
             <div className="card-box">
-              <div className="secao-titulo">Parâmetros de cálculo</div>
+              <h3 style={{ fontSize: 13, fontWeight: 500, color: '#0F1419', margin: '0 0 16px' }}>
+                Parâmetros de cálculo
+              </h3>
               <div className="config-item">
                 <label className="config-label">Nome da empresa</label>
                 <input className="config-input" value={configTemp.nomeEmpresa} onChange={e => setConfigTemp({...configTemp, nomeEmpresa: e.target.value})} />
@@ -1010,7 +1136,9 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
             </div>
 
             <div className="card-box">
-              <div className="secao-titulo">Prévia do cálculo</div>
+              <h3 style={{ fontSize: 13, fontWeight: 500, color: '#0F1419', margin: '0 0 12px' }}>
+                Prévia do cálculo
+              </h3>
               <div className="previa-desc">Com as configurações atuais, veja quanto custa cada período de marcha lenta:</div>
               {[15, 30, 60, 120, 180].map(min => (
                 <div key={min} className="previa-linha">
@@ -1024,9 +1152,8 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
               </div>
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   )
 }
-
