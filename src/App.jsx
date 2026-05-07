@@ -348,10 +348,6 @@ export default function App() {
           </nav>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ textAlign: 'right' }}>
-            <div className="cidade">São José dos Pinhais</div>
-            <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>{dataFormatada}</div>
-          </div>
           <div style={{ position: 'relative' }}>
             <button
               className="avatar"
@@ -512,21 +508,30 @@ export default function App() {
               <div className="valor verde">
                 R$ {(resumoSemana?.perdaSemana ? Math.round(resumoSemana.perdaSemana * 4.3) : 0).toLocaleString('pt-BR')}
               </div>
-              <div className="sub verde">▲ 12% vs abril</div>
+              <div className="sub">projeção (semana × 4,3)</div>
             </div>
 
             <div className="kpi-card">
               <div className="label">Marcha lenta</div>
               <div className="valor">
                 {(() => {
-                  const total = visiveis.reduce((s, v) => s + (parseInt(v.parado?.split(' ')[0]) || 0), 0)
-                  return `${total}h`
+                  const totMin = visiveis.reduce((s, v) => s + (v.paradoMin || 0), 0)
+                  const h = Math.floor(totMin / 60)
+                  const m = totMin % 60
+                  return m > 0 ? `${h}h ${m}min` : `${h}h`
                 })()}
               </div>
               <div className="sub">
                 {(() => {
-                  const total = visiveis.reduce((s, v) => s + (parseInt(v.parado?.split(' ')[0]) || 0), 0)
-                  return total > 30 ? `▲ ${total - 30}h acima da meta` : '✓ dentro da meta'
+                  const totMin = visiveis.reduce((s, v) => s + (v.paradoMin || 0), 0)
+                  const metaMin = visiveis.length * (config.minMarcha || 60)
+                  const diff = totMin - metaMin
+                  if (diff > 0) {
+                    const dh = Math.floor(diff / 60)
+                    const dm = diff % 60
+                    return `▲ ${dh > 0 ? dh + 'h' : ''}${dm > 0 ? ' ' + dm + 'min' : ''} acima da meta`.trim()
+                  }
+                  return '✓ dentro da meta'
                 })()}
               </div>
             </div>
@@ -573,19 +578,26 @@ export default function App() {
             const p = planoAcao.prioridades[0]
             return (
               <div className="agente-card">
-                <div className="tag">AGENTE VEBRAX · HÁ {Math.round((agora - ultimaAtualizacao) / 60000)} MIN</div>
+                <div className="tag">AGENTE VEBRAX · {(() => {
+                  if (!ultimaAtualizacao) return 'EM ANÁLISE'
+                  const diffMin = Math.max(0, Math.round((agora - ultimaAtualizacao) / 60000))
+                  return diffMin === 0 ? 'AGORA HÁ POUCO' : `HÁ ${diffMin} MIN`
+                })()}</div>
                 <h3 style={{ fontSize: 14, color: '#0F1419', margin: '8px 0 6px', fontWeight: 500 }}>
                   {p.placa} acumulou {p.parado} de marcha lenta hoje
                 </h3>
                 <div className="desc">
-                  {p.oQue.substring(0, 120)}... Custo <strong>R$ {calcPerda(p.paradoMin, config).toFixed(0)}</strong> por incidente.
+                  {p.oQue} Custo estimado: <strong>R$ {calcPerda(p.paradoMin, config).toFixed(0)}</strong>.
                 </div>
                 <div className="acoes">
                   <button
                     className="btn-primario"
                     onClick={() => {
-                      setSelecionadoAlerta(visiveis.indexOf(v))
-                      setTela('alertas')
+                      const idx = visiveis.findIndex(x => x.placa === p.placa)
+                      if (idx >= 0) {
+                        setSelecionadoAlerta(idx)
+                        setTela('alertas')
+                      }
                     }}
                   >
                     Ver investigação
@@ -649,7 +661,7 @@ export default function App() {
                         </span>
                       </td>
                       <td className="num">{ve.km}</td>
-                      <td className={parseInt(ve.parado) > 120 ? 'vermelho' : ''}>{ve.parado}</td>
+                      <td className={(ve.paradoMin || 0) > 120 ? 'vermelho' : ''}>{ve.parado}</td>
                       <td className={score >= 70 ? 'verde' : 'vermelho'}>
                         {score >= 70 ? '+' : '−'} R$ {calcPerda(ve.paradoMin, config).toFixed(0)}
                       </td>
@@ -752,25 +764,25 @@ export default function App() {
               {/* 4 KPI Cards */}
               <div className="kpi-grid">
                 <div className="kpi-card">
-                  <div className="label">Rodagem (maio)</div>
+                  <div className="label">Km hoje</div>
                   <div className="valor">
-                    {Math.round((parseInt(v?.km?.replace(/\D/g, '') || 0) * 22))} km
+                    {v?.km || '— km'}
                   </div>
-                  <div className="sub">22 dias úteis</div>
+                  <div className="sub">Pico {v?.velMax || '—'} km/h</div>
                 </div>
 
                 <div className="kpi-card">
                   <div className="label">Marcha lenta</div>
                   <div className="valor">{v?.parado}</div>
-                  <div className="sub">▼ 15% vs abril</div>
+                  <div className="sub">{(v?.paradoMin || 0) > (config.minMarcha || 60) ? '▲ acima da meta' : '✓ dentro da meta'}</div>
                 </div>
 
                 <div className="kpi-card">
-                  <div className="label">Economia gerada</div>
-                  <div className="valor verde">
-                    R$ {Math.round(calcPerda(v?.paradoMin || 0, config) * 22 * ((planoAcao.porPlaca[v?.placa]?.score || 95) / 100))}
+                  <div className="label">Perda projetada</div>
+                  <div className="valor vermelho">
+                    R$ {Math.round(calcPerda(v?.paradoMin || 0, config) * 22).toLocaleString('pt-BR')}
                   </div>
-                  <div className="sub">no mês</div>
+                  <div className="sub">marcha lenta × 22 dias úteis</div>
                 </div>
 
                 <div className="kpi-card">
@@ -791,23 +803,31 @@ export default function App() {
                   <span className="total">total acumulado: R$ {Math.round(calcPerda(v?.paradoMin || 0, config) * 14)}</span>
                 </div>
                 <svg viewBox="0 0 600 140" style={{ width: '100%', height: 140 }}>
-                  {[...Array(14)].map((_, i) => {
-                    const score = (planoAcao.porPlaca[v?.placa]?.score || 95) + Math.random() * 20 - 10
-                    const height = Math.max(10, (score / 100) * 100 + (i % 3) * 8)
-                    const x = 30 + i * 40
-                    const y = 120 - height
-                    return (
-                      <rect
-                        key={i}
-                        x={x}
-                        y={y}
-                        width={30}
-                        height={height}
-                        fill="#00C896"
-                        rx={2}
-                      />
-                    )
-                  })}
+                  {(() => {
+                    // Seed determinístico baseado em placa + dia
+                    const seed = (v?.placa || 'XX').split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+                    const baseScore = planoAcao.porPlaca[v?.placa]?.score || 95
+                    return [...Array(14)].map((_, i) => {
+                      // pseudo-aleatório determinístico
+                      const r = Math.sin(seed * 9301 + (i + 1) * 49297) * 0.5 + 0.5
+                      const variance = (r - 0.5) * 30
+                      const isWeekend = (i % 7 === 5 || i % 7 === 6)
+                      const height = isWeekend ? 0 : Math.max(8, (baseScore / 100) * 90 + variance)
+                      const x = 30 + i * 40
+                      const y = 120 - height
+                      return (
+                        <rect
+                          key={i}
+                          x={x}
+                          y={y}
+                          width={30}
+                          height={height}
+                          fill={isWeekend ? '#ECEEF1' : '#00C896'}
+                          rx={2}
+                        />
+                      )
+                    })
+                  })()}
                 </svg>
               </div>
 
