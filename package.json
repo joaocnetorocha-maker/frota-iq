@@ -1,7 +1,8 @@
 {
-  "name": "frota-iq",
+  "name": "vebrax",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "VEBRAX — controle de gastos invisíveis da operação",
   "type": "module",
   "scripts": {
     "dev": "vite",

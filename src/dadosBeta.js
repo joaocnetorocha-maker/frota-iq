@@ -1,4 +1,4 @@
-// dadosBeta.js — Modo demonstração FrotaIQ
+// dadosBeta.js — Modo demonstração VEBRAX
 // Gera dados simulados realistas que variam conforme a hora do dia.
 // USO: apenas para mostrar o protótipo a potenciais clientes enquanto
 // a API ONIXSAT não está liberada. Quando a API real chegar, criar
@@ -156,7 +156,7 @@ function gerarDiario(base, agora, paradoMin, ignicao, seed) {
 
   if (hora >= 6) {
     eventos.push({
-      h: '06:00', cor: '#1D9E75',
+      h: '06:00', cor: '#00C896',
       ev: 'Ignição ligada — saída da garagem',
       det: `Motorista: ${base.motorista}`
     })
@@ -173,7 +173,7 @@ function gerarDiario(base, agora, paradoMin, ignicao, seed) {
   if (hora >= 9) {
     const velMedia = 50 + Math.floor(rng(seed, 7) * 30)
     eventos.push({
-      h: '09:15', cor: '#1D9E75',
+      h: '09:15', cor: '#00C896',
       ev: 'Em rota',
       det: `Velocidade média: ${velMedia} km/h`
     })
@@ -197,7 +197,7 @@ function gerarDiario(base, agora, paradoMin, ignicao, seed) {
 
   if (hora >= 16) {
     eventos.push({
-      h: '16:00', cor: '#1D9E75',
+      h: '16:00', cor: '#00C896',
       ev: 'Em rota — retorno',
       det: 'Rumo à garagem'
     })
@@ -205,7 +205,7 @@ function gerarDiario(base, agora, paradoMin, ignicao, seed) {
 
   if (ignicao && hora >= 17) {
     eventos.push({
-      h: 'agora', cor: '#1D9E75',
+      h: 'agora', cor: '#00C896',
       ev: 'Em rota',
       det: 'Última atualização há poucos minutos'
     })
@@ -288,14 +288,14 @@ export function isBetaAtivo() {
   try {
     const params = new URLSearchParams(window.location.search)
     if (params.get('beta') === 'on') {
-      window.localStorage.setItem('frotaiq_beta', '1')
+      window.localStorage.setItem('vebrax_beta', '1')
       return true
     }
     if (params.get('beta') === 'off') {
-      window.localStorage.removeItem('frotaiq_beta')
+      window.localStorage.removeItem('vebrax_beta')
       return false
     }
-    return window.localStorage.getItem('frotaiq_beta') === '1'
+    return window.localStorage.getItem('vebrax_beta') === '1'
   } catch (e) {
     return false
   }

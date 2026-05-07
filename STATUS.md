@@ -1,19 +1,22 @@
-# FrotaIQ — Status do Projeto
+# VEBRAX — Status do Projeto
+
+> **Marca:** VEBRAX (antes FrotaIQ) · domínio vebrax.com.br · tagline "O que você não vê, você paga."
+
 
 > **Como usar este arquivo:** No início de cada sessão com Claude, peça pra ele ler `STATUS.md`. No fim da sessão, peça pra atualizar este arquivo com o que mudou. Assim nada se perde entre sessões.
 
 **Última atualização:** 27/04/2026 (deploy público do modo beta no ar)
 
-> 🌐 **Link público pra mostrar pra clientes:** https://frota-iq.vercel.app/?beta=on
+> 🌐 **Link público pra mostrar pra clientes:** https://vebrax.vercel.app/?beta=on
 > Sem `?beta=on` o site abre vazio (modo normal aguardando API real).
 
 ---
 
 ## Visão geral
 
-- **Nome:** FrotaIQ
-- **Tese:** transformar dados de rastreamento em economia, controle e decisões simples para operações de transporte
-- **MVP rodando em:** https://frota-iq.vercel.app
+- **Nome:** VEBRAX
+- **Tese:** controle de gastos invisíveis da operação — economia, controle e decisões simples para operações de transporte
+- **MVP rodando em:** https://vebrax.vercel.app
 - **Repo:** https://github.com/joaocnetorocha-maker/frota-iq
 - **Stack:** React + Vite (frontend) / Node.js (scripts backend)
 - **Frota real:** 13 motoristas/veículos cadastrados

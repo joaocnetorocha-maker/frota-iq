@@ -406,7 +406,7 @@ function montarDiario(msgs, paradoMinTotal = 0, blocosML = [], blocosExc = []) {
   ocorr.sort((a, b) => (b.custo || 0) - (a.custo || 0))
 
   if (ocorr.length === 0) {
-    return [{ h: '✓', cor: '#1D9E75', ev: 'Sem ocorrências de impacto nesse dia', det: '', custo: 0 }]
+    return [{ h: '✓', cor: '#00C896', ev: 'Sem ocorrências de impacto nesse dia', det: '', custo: 0 }]
   }
   return ocorr
 }

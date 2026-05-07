@@ -1,6 +1,8 @@
-# FrotaIQ — Setup de Produção (Tempo Real)
+# VEBRAX — Setup de Produção (Tempo Real)
 
-Esse guia te leva do FrotaIQ-com-dados-simulados pro FrotaIQ-com-dados-reais
+> Projeto antes chamado FrotaIQ — agora rodando em `vebrax.vercel.app`. Repo do GitHub ainda mantém o slug `frota-iq` (renomear depois). Domínio próprio `vebrax.com.br` ainda a apontar.
+
+Esse guia te leva do VEBRAX-com-dados-simulados pro VEBRAX-com-dados-reais
 da ONIXSAT, em **tempo real, 24/7, custo R$ 0**.
 
 Arquitetura final:
@@ -13,7 +15,7 @@ ONIXSAT (webservice)
        ↑ select
 [Vercel /api/dados]  ←──── chamado pelo frontend a cada 30s
        ↓ JSON
-[FrotaIQ React]  (UI atual)
+[VEBRAX React]  (UI atual)
 ```
 
 ---
@@ -81,7 +83,7 @@ Depois que a Vercel terminar o deploy, roda **uma vez** essa chamada pra povoar
 a tabela `veiculos` com os 16 caminhões da ONIX:
 
 ```
-curl -X POST https://frota-iq.vercel.app/api/sincronizar-veiculos \
+curl -X POST https://vebrax.vercel.app/api/sincronizar-veiculos \
   -H "Authorization: Bearer SEU_CRON_SECRET_AQUI"
 ```
 
@@ -101,8 +103,8 @@ Resposta esperada:
 3. **Cronjobs** → **Create cronjob**.
 
    **Job 1 — Coletor (mensagens em tempo real):**
-   - Title: `FrotaIQ - Coletar mensagens ONIX`
-   - URL: `https://frota-iq.vercel.app/api/coletar`
+   - Title: `VEBRAX - Coletar mensagens ONIX`
+   - URL: `https://vebrax.vercel.app/api/coletar`
    - Schedule: **Every 2 minutes** (Custom → */2 * * * *)
    - Em **Advanced** → **Request method**: POST
    - Em **Advanced** → **Request headers**, adiciona:
@@ -111,8 +113,8 @@ Resposta esperada:
    - Save.
 
    **Job 2 — Sincronizar veículos (1x por dia):**
-   - Title: `FrotaIQ - Sincronizar cadastro de veículos`
-   - URL: `https://frota-iq.vercel.app/api/sincronizar-veiculos`
+   - Title: `VEBRAX - Sincronizar cadastro de veículos`
+   - URL: `https://vebrax.vercel.app/api/sincronizar-veiculos`
    - Schedule: **Every day at 06:00**
    - Method: POST + mesmo header `Authorization`
    - Save.
@@ -129,7 +131,7 @@ Resposta esperada:
 - Tabela `coleta_estado`: linha 1 com `ultima_coleta_em` recente e `ultima_coleta_status = ok`.
 - Tabela `mensagens_cb`: começa a encher rápido (centenas de mensagens em poucos minutos).
 
-**No FrotaIQ** (https://frota-iq.vercel.app/api/dados):
+**No VEBRAX** (https://vebrax.vercel.app/api/dados):
 - Deve retornar JSON com `ok: true` e o array `frota` populado.
 
 ---

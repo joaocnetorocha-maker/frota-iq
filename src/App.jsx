@@ -304,7 +304,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
     <div className="app">
       {(() => {
         // Banner de status da conexão com /api/dados
-        let bg = '#E8F7EE', bd = '#1D9E75', cor = '#0E5F46', txt = ''
+        let bg = '#E8F7EE', bd = '#00C896', cor = '#0E5F46', txt = ''
         if (erro) {
           bg = '#FDECEC'; bd = '#D14343'; cor = '#7A1F1F'
           txt = `ERRO AO CARREGAR DADOS — ${erro}`
@@ -339,7 +339,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
         )
       })()}
       <div className="topo">
-        <div className="logo">frota<span>IQ</span></div>
+        <div className="logo">VEBRA<span>X</span></div>
         <nav className="nav">
           <button className={`nav-btn ${tela === 'painel' ? 'ativo' : ''}`} onClick={() => setTela('painel')}>Painel</button>
           <button className={`nav-btn ${tela === 'relatorio' ? 'ativo' : ''}`} onClick={() => setTela('relatorio')}>Relatório</button>
@@ -366,7 +366,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
               padding: '8px 32px 8px 14px',
               fontSize: 13,
               fontWeight: 500,
-              color: dataConsulta ? '#1F3A5C' : '#1a1a1a',
+              color: dataConsulta ? '#1F3A5C' : '#0F1419',
               background: dataConsulta ? '#EAF2FA' : '#fff',
               border: `1px solid ${dataConsulta ? '#5B7FA8' : '#ddd'}`,
               borderRadius: 8,
@@ -393,7 +393,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
               padding: '8px 32px 8px 14px',
               fontSize: 13,
               fontWeight: 500,
-              color: '#1a1a1a',
+              color: '#0F1419',
               background: '#fff',
               border: '1px solid #ddd',
               borderRadius: 8,
@@ -449,7 +449,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
             </div>
             <div className="metrica">
               <div className="metrica-label">Score médio da frota</div>
-              <div className="metrica-valor" style={{color: planoAcao.scoreMedio >= 80 ? '#1D9E75' : planoAcao.scoreMedio >= 60 ? '#E8B923' : '#D85A30'}}>{planoAcao.scoreMedio}</div>
+              <div className="metrica-valor" style={{color: planoAcao.scoreMedio >= 80 ? '#00C896' : planoAcao.scoreMedio >= 60 ? '#E8B923' : '#D85A30'}}>{planoAcao.scoreMedio}</div>
               <div className="metrica-sub">{planoAcao.dentroMeta} de {planoAcao.total} na meta</div>
             </div>
           </div>
@@ -457,7 +457,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
           {/* Prioridade da semana — só aparece se tem alguém pra acompanhar */}
           {planoAcao.prioridades[0] && (() => {
             const p = planoAcao.prioridades[0]
-            const corBadge = p.score < 40 ? '#D85A30' : p.score < 60 ? '#E8B923' : '#1D9E75'
+            const corBadge = p.score < 40 ? '#D85A30' : p.score < 60 ? '#E8B923' : '#00C896'
             return (
               <div className="card-box" style={{
                 border: `2px solid ${corBadge}`,
@@ -500,7 +500,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                 </div>
 
                 <div style={{fontSize:13, lineHeight:1.55, color:'#444', marginBottom:14}}>
-                  <strong style={{color:'#1a1a1a'}}>Ação sugerida:</strong> {p.acao}
+                  <strong style={{color:'#0F1419'}}>Ação sugerida:</strong> {p.acao}
                 </div>
 
                 <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
@@ -508,7 +508,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                     onClick={() => alert(`Conversa com ${p.motorista} marcada como feita!`)}
                     style={{
                       flex:'1 1 180px', padding:'10px 14px', fontSize:13, fontWeight:500,
-                      background:'#1a1a1a', color:'#fff', border:'none', borderRadius:8,
+                      background:'#0F1419', color:'#fff', border:'none', borderRadius:8,
                       cursor:'pointer',
                     }}
                   >
@@ -521,7 +521,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                     }}
                     style={{
                       flex:'1 1 180px', padding:'10px 14px', fontSize:13, fontWeight:500,
-                      background:'#fff', color:'#1a1a1a', border:'1px solid #ddd', borderRadius:8,
+                      background:'#fff', color:'#0F1419', border:'1px solid #ddd', borderRadius:8,
                       cursor:'pointer',
                     }}
                   >
@@ -533,8 +533,8 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
           })()}
 
           {planoAcao.prioridades.length === 0 && planoAcao.total > 0 && (
-            <div className="card-box" style={{marginBottom:'1.25rem', borderLeft:'4px solid #1D9E75', padding:'14px 18px'}}>
-              <div style={{fontSize:14, fontWeight:600, color:'#0F6E56'}}>
+            <div className="card-box" style={{marginBottom:'1.25rem', borderLeft:'4px solid #00C896', padding:'14px 18px'}}>
+              <div style={{fontSize:14, fontWeight:600, color:'#00A578'}}>
                 Frota toda dentro da meta nesta semana.
               </div>
               <div style={{fontSize:12, color:'#666', marginTop:4}}>
@@ -558,7 +558,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
             }).map((ve) => {
               const idx = veiculos.indexOf(ve)
               const score = planoAcao.ranking.find(r => r.placa === ve.placa)?.score ?? 95
-              const corScore = score >= 80 ? '#1D9E75' : score >= 60 ? '#E8B923' : '#D85A30'
+              const corScore = score >= 80 ? '#00C896' : score >= 60 ? '#E8B923' : '#D85A30'
               return (
                 <div
                   key={ve.placa}
@@ -590,7 +590,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                       fontSize: 11, color: '#888', marginTop: 6,
                       paddingTop: 6, borderTop: '1px solid #eee',
                     }}>
-                      Parado: <strong style={{color: '#1a1a1a'}}>{ve.parado}</strong> · Perda hoje: <strong style={{color: '#D85A30'}}>R$ {calcPerda(ve.paradoMin).toFixed(0)}</strong>
+                      Parado: <strong style={{color: '#0F1419'}}>{ve.parado}</strong> · Perda hoje: <strong style={{color: '#D85A30'}}>R$ {calcPerda(ve.paradoMin).toFixed(0)}</strong>
                     </div>
                   )}
                   {((ve.excessoVelMin || 0) > 0 || (ve.kmDesvio || 0) > 4) && (
@@ -653,7 +653,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                 {/* Plano de ação específico desse motorista — sempre aparece, com tom variando pelo score */}
                 {planoAcao.porPlaca[v.placa] && (() => {
                   const p = planoAcao.porPlaca[v.placa]
-                  const cor = p.score >= 80 ? '#1D9E75' : p.score >= 60 ? '#E8B923' : p.score >= 40 ? '#E89923' : '#D85A30'
+                  const cor = p.score >= 80 ? '#00C896' : p.score >= 60 ? '#E8B923' : p.score >= 40 ? '#E89923' : '#D85A30'
                   const fundo = p.score >= 80 ? '#F0F8F4' : p.score >= 60 ? '#FFFAEB' : p.score >= 40 ? '#FFF4E5' : '#FDEBE3'
                   const titulo = p.nivel === 'critico' ? 'Ação imediata necessária'
                               : p.nivel === 'atencao' ? 'Atenção — acompanhar'
@@ -685,14 +685,14 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                         <div style={{fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4}}>
                           O que aconteceu
                         </div>
-                        <div style={{fontSize: 13, lineHeight: 1.5, color: '#1a1a1a'}}>{p.oQue}</div>
+                        <div style={{fontSize: 13, lineHeight: 1.5, color: '#0F1419'}}>{p.oQue}</div>
                       </div>
 
                       <div style={{marginBottom: 10}}>
                         <div style={{fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4}}>
                           Ação sugerida
                         </div>
-                        <div style={{fontSize: 13, lineHeight: 1.5, color: '#1a1a1a'}}>{p.acao}</div>
+                        <div style={{fontSize: 13, lineHeight: 1.5, color: '#0F1419'}}>{p.acao}</div>
                       </div>
 
                       <div style={{
@@ -716,7 +716,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                             onClick={() => alert(`Conversa com ${v.motorista} marcada como feita!`)}
                             style={{
                               flex: '1 1 160px', padding: '9px 12px', fontSize: 12, fontWeight: 500,
-                              background: '#1a1a1a', color: '#fff', border: 'none', borderRadius: 6,
+                              background: '#0F1419', color: '#fff', border: 'none', borderRadius: 6,
                               cursor: 'pointer',
                             }}
                           >
@@ -734,7 +734,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                             }}
                             style={{
                               flex: '1 1 160px', padding: '9px 12px', fontSize: 12, fontWeight: 500,
-                              background: '#fff', color: '#1a1a1a', border: '1px solid #ddd', borderRadius: 6,
+                              background: '#fff', color: '#0F1419', border: '1px solid #ddd', borderRadius: 6,
                               cursor: 'pointer',
                             }}
                           >
@@ -750,7 +750,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                           }}
                           style={{
                             width: '100%', padding: '9px 12px', fontSize: 12, fontWeight: 500,
-                            background: '#1D9E75', color: '#fff', border: 'none', borderRadius: 6,
+                            background: '#00C896', color: '#fff', border: 'none', borderRadius: 6,
                             cursor: 'pointer',
                           }}
                         >
@@ -779,7 +779,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                         return h > 0 ? `${h}h ${mm}min` : `${mm} min`
                       }
                       const limpa = vg.excessos.length === 0 && vg.freadas === 0 && vg.aceleracoes === 0
-                      const corBorda = limpa ? '#1D9E75' : vg.excessos.length > 0 ? '#E55B3C' : '#D9A21B'
+                      const corBorda = limpa ? '#00C896' : vg.excessos.length > 0 ? '#E55B3C' : '#D9A21B'
                       return (
                         <div key={i} style={{
                           padding: '14px 16px',
@@ -795,7 +795,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                             {vg.emAndamento && (
                               <span style={{
                                 fontSize: 11, fontWeight: 600, padding: '3px 8px',
-                                background: '#1D9E7522', color: '#1D9E75', borderRadius: 12,
+                                background: '#00C89622', color: '#00C896', borderRadius: 12,
                               }}>EM ANDAMENTO</span>
                             )}
                           </div>
@@ -824,7 +824,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                               <span style={{color: '#E55B3C'}}>🔺 {vg.aceleracoes} aceleração{vg.aceleracoes > 1 ? 'ões' : ''}</span>
                             )}
                             {limpa && (
-                              <span style={{color: '#1D9E75'}}>✓ Sem ocorrências</span>
+                              <span style={{color: '#00C896'}}>✓ Sem ocorrências</span>
                             )}
                           </div>
                         </div>
@@ -923,7 +923,7 @@ consumoParado: typeof configTemp.consumoParado === 'number' ? configTemp.consumo
                           style={{
                             height: `${altura}px`,
                             width: '70%',
-                            background: d.valor === 0 ? '#f0f0f0' : (isHoje ? '#1D9E75' : '#D85A30'),
+                            background: d.valor === 0 ? '#f0f0f0' : (isHoje ? '#00C896' : '#D85A30'),
                             borderRadius: '4px 4px 0 0',
                             transition: 'height .3s ease',
                           }}

@@ -1,22 +1,23 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f3; color: #1a1a1a; }
-.app { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
-.topo { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 10px; }
-.logo { font-size: 20px; font-weight: 600; color: #1a1a1a; letter-spacing: -0.5px; }
-.logo span { color: #1D9E75; }
-.nav { display: flex; gap: 4px; background: #ebebeb; border-radius: 10px; padding: 4px; }
-.nav-btn { font-size: 13px; padding: 6px 16px; border-radius: 7px; border: none; background: transparent; color: #666; cursor: pointer; transition: all 0.12s; }
-.nav-btn:hover { background: #fff; color: #1a1a1a; }
-.nav-btn.ativo { background: #fff; color: #1a1a1a; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-.data-hora { font-size: 13px; color: #888; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F1F2F4; color: #0F1419; }
+.app { max-width: 1100px; margin: 0 auto; padding: 0 0 1.5rem; }
+.topo { display: flex; justify-content: space-between; align-items: center; margin: 0 0 1.5rem; padding: 0 24px; height: 56px; background: #0F1419; gap: 10px; }
+.logo { font-size: 17px; font-weight: 500; color: #fff; letter-spacing: 1.2px; }
+.logo span { color: #00C896; }
+.nav { display: flex; gap: 22px; background: transparent; border-radius: 0; padding: 0; }
+.nav-btn { font-size: 13px; padding: 18px 0; border-radius: 0; border: none; background: transparent; color: #8A9099; cursor: pointer; transition: color 0.12s; border-bottom: 2px solid transparent; }
+.nav-btn:hover { background: transparent; color: #fff; }
+.nav-btn.ativo { background: transparent; color: #fff; font-weight: 500; box-shadow: none; border-bottom: 2px solid #00C896; }
+.data-hora { font-size: 12px; color: #8A9099; }
+.app > *:not(.topo) { padding-left: 1.5rem; padding-right: 1.5rem; }
 .filtro-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1.25rem; }
 .filtro-btn { font-size: 12px; padding: 5px 14px; border-radius: 20px; border: 1px solid #ddd; background: #fff; color: #666; cursor: pointer; transition: all 0.12s; }
 .filtro-btn:hover { background: #f0f0f0; }
-.filtro-btn.ativo { background: #1D9E75; color: #fff; border-color: #1D9E75; }
+.filtro-btn.ativo { background: #00C896; color: #fff; border-color: #00C896; }
 .resumo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1.5rem; }
 .metrica { background: #fff; border-radius: 10px; padding: 14px 16px; border: 1px solid #eee; }
 .metrica-label { font-size: 12px; color: #888; margin-bottom: 6px; }
-.metrica-valor { font-size: 22px; font-weight: 600; color: #1a1a1a; }
+.metrica-valor { font-size: 22px; font-weight: 600; color: #0F1419; }
 .metrica-valor.alerta { color: #D85A30; }
 .metrica-sub { font-size: 11px; color: #aaa; margin-top: 3px; }
 .dois-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 1.5rem; }
@@ -27,7 +28,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .ranking-item:last-child { border-bottom: none; }
 .ranking-pos { font-size: 13px; font-weight: 600; color: #aaa; min-width: 16px; }
 .ranking-info { flex: 1; }
-.ranking-placa { font-size: 13px; font-weight: 600; color: #1a1a1a; }
+.ranking-placa { font-size: 13px; font-weight: 600; color: #0F1419; }
 .ranking-motorista { font-size: 11px; color: #888; }
 .barra-bg { height: 4px; background: #f0f0f0; border-radius: 2px; margin-top: 5px; }
 .barra-fill { height: 4px; border-radius: 2px; background: #D85A30; }
@@ -38,14 +39,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .projecao-sub { font-size: 12px; color: #888; line-height: 1.5; margin-bottom: 12px; }
 .projecao-linha { display: flex; justify-content: space-between; padding: 6px 0; border-top: 1px solid #f0f0f0; font-size: 12px; }
 .pl-label { color: #888; }
-.pl-valor { font-weight: 600; color: #1a1a1a; }
+.pl-valor { font-weight: 600; color: #0F1419; }
 .economia-destaque { background: #EAF3DE; border-radius: 8px; padding: 10px 14px; margin-top: 12px; }
 .eco-label { font-size: 11px; color: #3B6D11; margin-bottom: 2px; }
 .eco-valor { font-size: 17px; font-weight: 700; color: #27500A; }
 .legenda { display: flex; gap: 16px; margin-bottom: 10px; }
 .leg-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #888; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
-.dot.verde { background: #1D9E75; }
+.dot.verde { background: #00C896; }
 .dot.amarelo { background: #BA7517; }
 .dot.vermelho { background: #D85A30; }
 .frota-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 1.5rem; }
@@ -54,7 +55,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .card-veiculo.verde { background: #EAF3DE; border-color: #639922; }
 .card-veiculo.amarelo { background: #FAEEDA; border-color: #BA7517; }
 .card-veiculo.vermelho { background: #FCEBEB; border-color: #A32D2D; }
-.card-veiculo.selecionado { box-shadow: 0 0 0 3px #1a1a1a; }
+.card-veiculo.selecionado { box-shadow: 0 0 0 3px #0F1419; }
 .cv-placa { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
 .verde .cv-placa { color: #27500A; }
 .amarelo .cv-placa { color: #633806; }
@@ -74,7 +75,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .ignicao.off { background: #f0f0f0; color: #aaa; }
 .detalhe-painel { background: #fff; border-radius: 12px; padding: 1.25rem; border: 1px solid #eee; margin-bottom: 1.5rem; }
 .det-topo { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
-.det-titulo { font-size: 16px; font-weight: 700; color: #1a1a1a; }
+.det-titulo { font-size: 16px; font-weight: 700; color: #0F1419; }
 .det-sub { font-size: 13px; color: #888; margin-top: 2px; }
 .badge { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
 .badge.verde { background: #EAF3DE; color: #27500A; }
@@ -83,7 +84,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .det-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1rem; }
 .det-item { background: #f8f8f6; border-radius: 8px; padding: 12px; }
 .det-label { font-size: 11px; color: #888; margin-bottom: 4px; }
-.det-valor { font-size: 17px; font-weight: 600; color: #1a1a1a; }
+.det-valor { font-size: 17px; font-weight: 600; color: #0F1419; }
 .det-valor.alerta { color: #D85A30; }
 .alerta-box { border-radius: 8px; padding: 14px 16px; margin-bottom: 1rem; display: flex; gap: 12px; align-items: flex-start; }
 .alerta-box.amarelo { background: #FAEEDA; border: 1px solid #BA7517; }
@@ -101,7 +102,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .diario-linha:last-child { border-bottom: none; }
 .d-hora { font-size: 12px; color: #aaa; min-width: 45px; padding-top: 1px; }
 .d-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
-.d-evento { font-size: 13px; font-weight: 500; color: #1a1a1a; }
+.d-evento { font-size: 13px; font-weight: 500; color: #0F1419; }
 .d-detalhe { font-size: 12px; color: #888; margin-top: 2px; }
 .grafico-semana { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; align-items: end; }
 .grafico-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
@@ -111,18 +112,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .grafico-valor { font-size: 11px; color: #D85A30; font-weight: 600; }
 .tabela { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tabela th { text-align: left; padding: 8px 12px; font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.3px; border-bottom: 1px solid #eee; }
-.tabela td { padding: 10px 12px; border-bottom: 1px solid #f5f5f5; color: #1a1a1a; }
+.tabela td { padding: 10px 12px; border-bottom: 1px solid #f5f5f5; color: #0F1419; }
 .tabela tr:last-child td { border-bottom: none; }
 .tabela tr:hover td { background: #fafafa; }
 .td-placa { font-weight: 600; }
 .td-perda { color: #D85A30; font-weight: 600; }
 .config-item { margin-bottom: 1.25rem; }
-.config-label { display: block; font-size: 13px; font-weight: 500; color: #1a1a1a; margin-bottom: 6px; }
-.config-input { width: 100%; padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; color: #1a1a1a; background: #fff; outline: none; transition: border 0.12s; }
-.config-input:focus { border-color: #1D9E75; }
+.config-label { display: block; font-size: 13px; font-weight: 500; color: #0F1419; margin-bottom: 6px; }
+.config-input { width: 100%; padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; color: #0F1419; background: #fff; outline: none; transition: border 0.12s; }
+.config-input:focus { border-color: #00C896; }
 .config-hint { font-size: 11px; color: #aaa; margin-top: 4px; }
-.btn-salvar { width: 100%; padding: 10px; background: #1D9E75; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.12s; margin-top: 0.5rem; }
-.btn-salvar:hover { background: #0F6E56; }
+.btn-salvar { width: 100%; padding: 10px; background: #00C896; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.12s; margin-top: 0.5rem; }
+.btn-salvar:hover { background: #00A578; }
 .previa-desc { font-size: 13px; color: #888; margin-bottom: 1rem; line-height: 1.5; }
 .previa-linha { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
 .previa-linha:last-of-type { border-bottom: none; }
@@ -130,4 +131,4 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .previa-valor { font-weight: 600; color: #D85A30; }
 .previa-formula { background: #f8f8f6; border-radius: 8px; padding: 12px; margin-top: 1rem; }
 .formula-titulo { font-size: 11px; color: #888; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.3px; }
-.formula-txt { font-size: 13px; font-weight: 600; color: #1a1a1a; font-family: monospace; }
+.formula-txt { font-size: 13px; font-weight: 600; color: #0F1419; font-family: monospace; }

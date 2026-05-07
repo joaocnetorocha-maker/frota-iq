@@ -1,5 +1,5 @@
 // =============================================================================
-// dadosReais.js — Consome dados do FrotaIQ via /api/dados (Supabase)
+// dadosReais.js — Consome dados do VEBRAX via /api/dados (Supabase)
 // =============================================================================
 // Suporta tanto o dia atual (modo tempo real) quanto dias passados (snapshot
 // salvo na tabela historico_dia pelo job /api/fechar-dia que roda 23:55).

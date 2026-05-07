@@ -1,16 +1,31 @@
-# React + Vite
+# VEBRAX
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+> Controle de gastos invisíveis da operação.
+>
+> **O que você não vê, você paga.**
 
-Currently, two official plugins are available:
+VEBRAX identifica e elimina os custos que passam despercebidos no dia a dia da frota — marcha lenta, desvios de rota, excessos de velocidade, paradas atípicas. Cada minuto parado com motor ligado vira número, vira gráfico, vira ação.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Stack
 
-## React Compiler
+- React 19 + Vite
+- Supabase (auth + dados agregados)
+- Vercel (hosting + cron)
+- ONIXSAT Webservice (telemetria de frota)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Rodando local
 
-## Expanding the ESLint configuration
+```bash
+npm install
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Deploy
+
+Push pra `main` faz deploy automático na Vercel.
+
+## Documentação
+
+- `STATUS.md` — situação atual do projeto
+- `SETUP-PRODUCAO.md` — guia de produção (Supabase + Vercel + cron)
+- `email-trucks-webservice.md` — comunicação técnica com a ONIXSAT

@@ -1,5 +1,5 @@
 -- =============================================================================
--- FrotaIQ — Schema do banco Supabase
+-- VEBRAX — Schema do banco Supabase
 -- =============================================================================
 -- Como usar:
 --   1. Cria projeto grátis em supabase.com
