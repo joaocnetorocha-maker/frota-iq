@@ -43,10 +43,17 @@ const ML_DELTA_ODM_KM = 0.1    // km  — 100m no tacógrafo já é movimento de
 // === Excesso de velocidade — REGRA CONSERVADORA (AND, não OR) ===
 // Bloco só vira evento real se preencher:
 //   (≥2 amostras consecutivas acima do limite) E (≥30s de duração CERTA)
-//   OU evt34 emitido pela própria ONIXSAT (autoridade do equipamento).
+//   OU evt34 emitido pela própria ONIXSAT (autoridade do equipamento)
+//   OU 1 amostra isolada com vel ≥ EXC_VEL_FORTE_KMH (e não suspeita).
 // O AND é importante: 2 amostras isoladas espaçadas 5s ainda é ruído.
+// Exceção da amostra isolada forte: ONIXSAT entrega telemetria a cada ~1-2 min;
+// um pico real de curta duração (40s acima do limite) chega como 1 msg só, e
+// a regra antiga descartava como ruído. Acima de 95 km/h em caminhão pesado,
+// a probabilidade de ser ruído cai muito (telemetria errada > 140 já é
+// classificada como velSuspeita e bloqueada por outro caminho).
 const EXC_MIN_AMOSTRAS  = 2
 const EXC_DURACAO_MIN_S = 30
+const EXC_VEL_FORTE_KMH = 95
 
 // === GAP de telemetria — quebra bloco quando rastreador perde sinal ==========
 // Se duas msgs CONSECUTIVAS no mesmo bloco têm Δt > MAX_GAP_BLOCO_S OU salto de
@@ -165,13 +172,16 @@ function blocosExcesso(msgsOrd) {
     bloco.dtPico = msgPico.dt
     // Validação CONSERVADORA (AND, não OR):
     //   - 2+ amostras consecutivas E ≥30s de duração certa entre elas, OU
-    //   - evt34 confirmado pela própria ONIXSAT (autoridade do equipamento)
+    //   - evt34 confirmado pela própria ONIXSAT (autoridade do equipamento), OU
+    //   - 1 amostra isolada com vel ≥ EXC_VEL_FORTE_KMH e NÃO suspeita
+    //     (pico curto entre amostras de telemetria — comum em ONIXSAT 1-2min)
     // 2 amostras isoladas separadas por 5s ainda é considerado ruído —
     // o motorista precisa ter sustentado a velocidade alta por pelo menos 30s
-    // pra a infração ser tratada como real.
+    // pra a infração ser tratada como real, OU ter passado de 95 km/h.
     bloco.valido =
       (bloco.qtdMsgs >= EXC_MIN_AMOSTRAS && bloco.duracaoCertaS >= EXC_DURACAO_MIN_S) ||
-      bloco.temEvt34
+      bloco.temEvt34 ||
+      (bloco.qtdMsgs === 1 && bloco.velMax >= EXC_VEL_FORTE_KMH && !bloco.msgs[0].velSuspeita)
     blocos.push(bloco)
     bloco = null
   }
@@ -295,6 +305,13 @@ function veiculoVazio(v) {
     alertaDesc: '',
     diario: [{ h: '—', cor: '#888', ev: 'Sem mensagens nas últimas horas', det: '' }],
     viagens: [],
+    incidenteInicio: null,
+    incidenteFim: null,
+    incidenteLocal: null,
+    incidenteMaiorMin: 0,
+    incidenteBlocos: 0,
+    paradoPct: 0,
+    periodoCobertoMin: 0,
   }
 }
 
@@ -756,6 +773,14 @@ export default async function handler(req, res) {
             ? h.diario
             : [{ h: '—', cor: '#888', ev: 'Snapshot sem diário detalhado', det: dataConsulta }],
           viagens: Array.isArray(h.viagens) ? h.viagens : [],
+          // Snapshot histórico ainda não captura timestamps de incidentes — null indica isso pra UI
+          incidenteInicio: null,
+          incidenteFim: null,
+          incidenteLocal: h.posicao_final || null,
+          incidenteMaiorMin: 0,
+          incidenteBlocos: 0,
+          paradoPct: 0,
+          periodoCobertoMin: 0,
         }
       })
 
@@ -823,6 +848,36 @@ export default async function handler(req, res) {
 
       const perdaHoje = Math.round((ag.paradoMin / 60) * CONSUMO_PARADO * PRECO_DIESEL * 100) / 100
 
+      // === Dados de incidente pra alimentar o detalhe do alerta ===
+      // Permite UI mostrar timestamp REAL da detecção e local REAL do maior bloco,
+      // em vez de strings hardcoded tipo "BR-277 km 142" ou "82% do período".
+      let incidenteInicio = null
+      let incidenteFim = null
+      let incidenteLocal = null
+      let incidenteMaiorMin = 0
+      let incidenteBlocos = 0
+      if (ag.blocosMarchaLenta && ag.blocosMarchaLenta.length > 0) {
+        const blocos = ag.blocosMarchaLenta
+        const maior = blocos.reduce((a, b) => (a.duracaoMin > b.duracaoMin ? a : b))
+        incidenteInicio = maior.msgs[0]?.dt || null
+        incidenteFim = maior.msgs[maior.msgs.length - 1]?.dt || null
+        incidenteMaiorMin = Math.round(maior.duracaoMin)
+        incidenteBlocos = blocos.length
+        const mi = maior.msgs[0]
+        incidenteLocal = mi && mi.mun ? `${mi.mun}/${mi.uf}` : null
+      }
+
+      // Percentual REAL de marcha lenta sobre o período coberto pelas mensagens
+      // (primeira até última msg do veículo hoje). Não inventa "82%".
+      let paradoPct = 0
+      let periodoCobertoMin = 0
+      if (minhasMsgs.length >= 2) {
+        const tIni = new Date(minhasMsgs[0].dt).getTime()
+        const tFim = new Date(minhasMsgs[minhasMsgs.length - 1].dt).getTime()
+        periodoCobertoMin = Math.max(1, Math.round((tFim - tIni) / 60000))
+        paradoPct = Math.min(100, Math.round((ag.paradoMin / periodoCobertoMin) * 100))
+      }
+
       const veiculo = {
         placa: v.placa || '—',
         motorista: v.motorista || ultima.mot || 'Não vinculado',
@@ -863,6 +918,14 @@ export default async function handler(req, res) {
           ag.blocosExcesso || []
         ),
         viagens: detectarViagens(ag.msgsSanitizadas || minhasMsgs),
+        // Campos de incidente pra UI mostrar dados REAIS (sem hardcoded)
+        incidenteInicio,        // timestamp ISO do início do maior bloco de marcha lenta
+        incidenteFim,           // timestamp ISO do fim
+        incidenteLocal,         // "Cidade/UF" onde ocorreu — null se desconhecido
+        incidenteMaiorMin,      // duração do maior bloco em minutos
+        incidenteBlocos,        // quantos blocos de marcha lenta no dia
+        paradoPct,              // % real de marcha lenta sobre o período coberto
+        periodoCobertoMin,      // minutos cobertos pelas mensagens hoje
       }
       if (ehCompare) {
         veiculo.picosSuspeitos = ag.picosSuspeitos
